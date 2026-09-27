@@ -460,18 +460,26 @@ jobs:
           # it must run against an installed copy, not the bare build output.
           bun scripts/build-binaries.ts --target bun-linux-x64
           bun scripts/package-release.ts
-          release="$PWD/build/release"
+          # wsl-bash runs as root and the installer refuses a root install, so the
+          # install and every command after it run as a throwaway non-root user,
+          # as a real WSL user would. The release is copied out of /root first.
+          user=aidlc-smoke
+          useradd --create-home "$user"
+          release="$(mktemp -d)"
+          cp -R build/release/. "$release/"
           # Provenance is attested at publication. With no gh, the installer takes
           # its documented checksum-only path, so the bundle only has to exist.
           printf 'aidlc-wsl-provenance-placeholder\n' > "$release/aidlc-release.intoto.jsonl"
-          export AIDLC_INSTALL_ROOT="$HOME/aidlc-machine"
-          export AIDLC_BIN_DIR="$HOME/aidlc-bin"
-          export AIDLC_GH_BIN="$HOME/aidlc-no-gh/gh"
-          sh "$release/install.sh" --from "$release" --offline --quiet
-          "$AIDLC_BIN_DIR/aidlc" version
-          project="$(mktemp -d)"
-          "$AIDLC_BIN_DIR/aidlc" config --project-dir "$project" --harness claude --mcp none --quiet
-          "$AIDLC_BIN_DIR/aidlc" doctor --project-dir "$project" --quiet
+          chmod -R a+rX "$release"
+          cd /
+          export AIDLC_INSTALL_ROOT="/home/$user/aidlc-machine"
+          export AIDLC_BIN_DIR="/home/$user/aidlc-bin"
+          export AIDLC_GH_BIN="/home/$user/aidlc-no-gh/gh"
+          runuser -u "$user" -- sh "$release/install.sh" --from "$release" --offline --quiet
+          runuser -u "$user" -- "$AIDLC_BIN_DIR/aidlc" version
+          project="$(runuser -u "$user" -- mktemp -d)"
+          runuser -u "$user" -- "$AIDLC_BIN_DIR/aidlc" config --project-dir "$project" --harness claude --mcp none --quiet
+          runuser -u "$user" -- "$AIDLC_BIN_DIR/aidlc" doctor --project-dir "$project" --quiet
           exit "$result"
       - name: Sanitize WSL evidence
         id: sanitize_wsl

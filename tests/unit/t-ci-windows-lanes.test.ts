@@ -207,13 +207,18 @@ describe("t-ci-windows-lanes", () => {
     for (const variable of ["AIDLC_INSTALL_ROOT", "AIDLC_BIN_DIR", "AIDLC_GH_BIN"]) {
       expect(run).toContain(`export ${variable}=`);
     }
-    expect(run).toContain('sh "$release/install.sh" --from "$release" --offline --quiet');
+    // wsl-bash runs as root and install.sh refuses a root install, so the
+    // install and everything after it run as a throwaway non-root user.
+    expect(run).toContain('useradd --create-home "$user"');
+    expect(run.indexOf('useradd --create-home "$user"'))
+      .toBeLessThan(run.indexOf('runuser -u "$user" -- sh "$release/install.sh"'));
+    expect(run).toContain('runuser -u "$user" -- sh "$release/install.sh" --from "$release" --offline --quiet');
     for (const command of [
       '"$AIDLC_BIN_DIR/aidlc" version',
       '"$AIDLC_BIN_DIR/aidlc" config --project-dir "$project" --harness claude --mcp none --quiet',
       '"$AIDLC_BIN_DIR/aidlc" doctor --project-dir "$project" --quiet',
     ]) {
-      expect(run).toContain(command);
+      expect(run).toContain(`runuser -u "$user" -- ${command}`);
     }
     expect(run).not.toContain("build/binaries/linux-x64/aidlc doctor");
     expect(run.trimEnd().endsWith('exit "$result"')).toBe(true);
