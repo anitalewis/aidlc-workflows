@@ -145,16 +145,31 @@ function procArgs(env: string[]): Uint8Array {
   return Buffer.concat([argc, Buffer.from(`/bin/sleep\0\0\0sleep\0${env.map((value) => `${value}\0`).join("")}\0`)]);
 }
 
+/** Synthetic PIDs that never collide with this process or its parent. */
+function fixturePids(count: number): number[] {
+  const pids: number[] = [];
+  for (let pid = 5001; pids.length < count; pid++) {
+    if (pid !== process.pid && pid !== process.ppid) pids.push(pid);
+  }
+  return pids;
+}
+
 /** A fake libSystem over a process table; the supervisor is this process. */
-function darwinTable(options: { unreadableOnArgs?: boolean; detachedTokenBearer?: boolean } = {}) {
+function darwinTable(options: {
+  unreadableOnArgs?: boolean; detachedTokenBearer?: boolean; unrelatedMalformed?: boolean;
+} = {}) {
   type Row = { ppid: number; uid: number; start: bigint; state: "readable" | "unreadable" | "gone" };
+  const [child, detached, unrelated] = fixturePids(3);
   const rows = new Map<number, Row>([
     [process.ppid, { ppid: 1, uid: 501, start: 1000n, state: "readable" }],
     [process.pid, { ppid: process.ppid, uid: 501, start: 2000n, state: "readable" }],
-    [5001, { ppid: process.pid, uid: 501, start: 3000n, state: "readable" }],
+    [child, { ppid: process.pid, uid: 501, start: 3000n, state: "readable" }],
   ]);
   // A double-forked descendant under launchd, owned only through the token.
-  if (options.detachedTokenBearer) rows.set(6001, { ppid: 1, uid: 501, start: 4000n, state: "readable" });
+  if (options.detachedTokenBearer) rows.set(detached, { ppid: 1, uid: 501, start: 4000n, state: "readable" });
+  // Another same-user process under launchd with no token and no ancestry.
+  if (options.unrelatedMalformed) rows.set(unrelated, { ppid: 1, uid: 501, start: 5000n, state: "readable" });
+  let malformedOnce = options.unrelatedMalformed === true;
   const signaled: number[] = [];
   const api: DarwinProcessCalls = {
     tui_listpids(buffer) {
@@ -179,13 +194,20 @@ function darwinTable(options: { unreadableOnArgs?: boolean; detachedTokenBearer?
     tui_procargs(pid, buffer) {
       // Arguments are hidden, so ownership comes from ancestry. Optionally the
       // descendant turns unreadable between the scan and its recheck.
-      if (options.unreadableOnArgs && pid === 5001) rows.get(5001)!.state = "unreadable";
-      if (pid === 6001 && rows.get(6001)?.state === "readable") {
+      if (options.unreadableOnArgs && pid === child) rows.get(child)!.state = "unreadable";
+      if (options.detachedTokenBearer && pid === detached && rows.get(detached)!.state === "readable") {
         // Its token-bearing arguments read, then it turns unreadable (setuid exec).
         const args = procArgs([`AIDLC_TUI_CONTAINMENT=${containment.env!.AIDLC_TUI_CONTAINMENT}`]);
         buffer.set(args);
-        rows.get(6001)!.state = "unreadable";
+        rows.get(detached)!.state = "unreadable";
         return args.length;
+      }
+      if (malformedOnce && pid === unrelated) {
+        // Positive but malformed arguments, then EPERM on the recheck.
+        malformedOnce = false;
+        buffer.set([0xff, 0xff, 0xff]);
+        rows.get(unrelated)!.state = "unreadable";
+        return 3;
       }
       return -1;
     },
@@ -193,43 +215,54 @@ function darwinTable(options: { unreadableOnArgs?: boolean; detachedTokenBearer?
     tui_waitid: () => -10, // ECHILD: the survivor is not the supervisor's child.
   };
   const containment = darwinContainment(process.ppid, api, null);
-  if (options.detachedTokenBearer) rows.get(5001)!.state = "gone";
-  return { rows, signaled, containment };
+  if (options.detachedTokenBearer || options.unrelatedMalformed) rows.get(child)!.state = "gone";
+  return { rows, signaled, containment, child, detached, unrelated };
 }
 
 describe("Darwin containment rechecks", () => {
   // Full Suite 36341941597 (t29, macOS): a scanned descendant that becomes
   // EPERM-unreadable (a setuid exec such as /bin/ps, or a reused PID) proves
-  // neither exit nor replacement, so it must neither fail nor finish cleanup.
+  // neither exit nor replacement, so it must neither fail nor finish cleanup,
+  // and an unverified process must never be signaled.
   const deadline = () => Date.now() + 60_000;
 
   test("an owned process that stays unreadable keeps cleanup unconfirmed until it is gone", () => {
-    const { rows, signaled, containment } = darwinTable();
+    const { rows, signaled, containment, child } = darwinTable();
     expect(containment.sweep(false, undefined, deadline())).toBe(false);
-    expect(signaled).toEqual([5001]);
-    rows.get(5001)!.state = "unreadable";
+    expect(signaled).toEqual([child]);
+    rows.get(child)!.state = "unreadable";
     expect(containment.sweep(true, undefined, deadline())).toBe(false);
     expect(containment.sweep(true, undefined, deadline())).toBe(false);
-    expect(signaled).toEqual([5001]);
-    rows.get(5001)!.state = "gone";
+    expect(signaled).toEqual([child]);
+    rows.get(child)!.state = "gone";
     expect(containment.sweep(true, undefined, deadline())).toBe(true);
   });
 
   test("a detached token-bearing process that turns unreadable after its arguments are read stays unresolved", () => {
-    const { rows, signaled, containment } = darwinTable({ detachedTokenBearer: true });
+    const { rows, signaled, containment, detached } = darwinTable({ detachedTokenBearer: true });
     expect(containment.sweep(true, undefined, deadline())).toBe(false);
     expect(containment.sweep(true, undefined, deadline())).toBe(false);
     expect(signaled).toEqual([]);
-    rows.get(6001)!.state = "gone";
+    rows.get(detached)!.state = "gone";
     expect(containment.sweep(true, undefined, deadline())).toBe(true);
   });
 
+  test("an unrelated process with malformed arguments blocks completion while unreadable but is never signaled", () => {
+    const { rows, signaled, containment, unrelated } = darwinTable({ unrelatedMalformed: true });
+    expect(containment.sweep(true, undefined, deadline())).toBe(false);
+    expect(containment.sweep(true, undefined, deadline())).toBe(false);
+    rows.get(unrelated)!.state = "readable"; // Readable again, with neither token nor ancestry.
+    expect(containment.sweep(true, undefined, deadline())).toBe(true);
+    expect(containment.sweep(true, undefined, deadline())).toBe(true);
+    expect(signaled).toEqual([]);
+  });
+
   test("a process that turns unreadable before its signal is kept unsignaled without failing the sweep", () => {
-    const { rows, signaled, containment } = darwinTable({ unreadableOnArgs: true });
+    const { rows, signaled, containment, child } = darwinTable({ unreadableOnArgs: true });
     expect(containment.sweep(true, undefined, deadline())).toBe(false);
     expect(signaled).toEqual([]);
     expect(containment.sweep(true, undefined, deadline())).toBe(false);
-    rows.get(5001)!.state = "gone";
+    rows.get(child)!.state = "gone";
     expect(containment.sweep(true, undefined, deadline())).toBe(true);
   });
 });

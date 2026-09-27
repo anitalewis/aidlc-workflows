@@ -250,6 +250,10 @@
             {
               "classname": "Darwin containment rechecks",
               "name": "a detached token-bearing process that turns unreadable after its arguments are read stays unresolved"
+            },
+            {
+              "classname": "Darwin containment rechecks",
+              "name": "an unrelated process with malformed arguments blocks completion while unreadable but is never signaled"
             }
           ]
         },
@@ -1089,6 +1093,10 @@
             {
               "classname": "Darwin containment rechecks",
               "name": "a detached token-bearing process that turns unreadable after its arguments are read stays unresolved"
+            },
+            {
+              "classname": "Darwin containment rechecks",
+              "name": "an unrelated process with malformed arguments blocks completion while unreadable but is never signaled"
             }
           ]
         },
@@ -1957,6 +1965,10 @@
             {
               "classname": "Darwin containment rechecks",
               "name": "a detached token-bearing process that turns unreadable after its arguments are read stays unresolved"
+            },
+            {
+              "classname": "Darwin containment rechecks",
+              "name": "an unrelated process with malformed arguments blocks completion while unreadable but is never signaled"
             }
           ]
         },

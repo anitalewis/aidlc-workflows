@@ -592,9 +592,13 @@ export function darwinContainment(parentPid: number, api: DarwinProcessCalls, li
   const waitInfo = new BigUint64Array(16); // At least Darwin's 104-byte siginfo_t, 8-byte aligned.
   let pids = new Int32Array(256);
   const token = randomUUID();
+  // Proven ownership only: a retained identity may be signaled.
   const retained = new Map<number, DarwinProcessIdentity>();
-  // Processes whose arguments were read but whose recheck then hit EPERM.
+  // Processes whose arguments read but whose recheck then hit EPERM. They may be
+  // ours, so they block completion, but they never authorize a signal: once
+  // readable again they must prove ownership by token or ancestry.
   let unreadableCandidates: DarwinProcessIdentity[] = [];
+  const unverified = new Map<number, DarwinProcessIdentity>();
   const snapshot = (deadline: number): Map<number, DarwinProcessIdentity> => {
     unreadableCandidates = [];
     let bytes: number;
@@ -661,8 +665,16 @@ export function darwinContainment(parentPid: number, api: DarwinProcessCalls, li
           unresolved.push(previous);
         }
       }
-      for (const candidate of unreadableCandidates) {
-        if (!unresolved.some((previous) => previous.pid === candidate.pid)) unresolved.push(candidate);
+      for (const candidate of unreadableCandidates) unverified.set(candidate.pid, candidate);
+      for (const [pid, candidate] of unverified) {
+        if (processes.has(pid) && !unreadableCandidates.includes(candidate)) {
+          unverified.delete(pid); // Readable again: ownership below needs its own proof.
+          continue;
+        }
+        if (unreadableCandidates.includes(candidate)) continue;
+        withinDeadline(observationDeadline);
+        const current = recheckIdentity(pid);
+        if (current !== DARWIN_UNREADABLE && !(current && sameDarwinProcess(current, candidate))) unverified.delete(pid);
       }
       const owned: DarwinProcessIdentity[] = [];
       for (const identity of processes.values()) {
@@ -692,7 +704,7 @@ export function darwinContainment(parentPid: number, api: DarwinProcessCalls, li
         }
       }
       withinDeadline(observationDeadline);
-      if (owned.length !== 0 || unresolved.length !== 0) return false;
+      if (owned.length !== 0 || unresolved.length !== 0 || unverified.size !== 0) return false;
       // Observe without stealing Bun's target status. Unlike Linux's subreaper,
       // ECHILD alone is insufficient; the token-owned set must also be empty.
       const result = api.tui_waitid(0, 0, waitInfo, 0x25); // P_ALL, WEXITED | WNOHANG | WNOWAIT
