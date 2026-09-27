@@ -1,6 +1,7 @@
 // DEBUG ONLY (debug/windows-lock-livelock): repeat t46's five-process audit
 // race under load and keep the lock traces of every race that stalls.
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   AIDLC_SRC, cleanupTestProject, createTestProject, FIXTURES_DIR, seedAuditFile, seedStateFile,
@@ -21,6 +22,8 @@ async function race(loop: number, r: number) {
   const trace = join(out, `l${loop}-r${r}`);
   mkdirSync(trace, { recursive: true });
   const start = performance.now();
+  // t46's sampler: list only the temp directory's lock names every 50 ms.
+  const sampler = setInterval(() => { try { readdirSync(tmpdir()).filter((name) => name.startsWith(".aidlc-audit-")); } catch { /* best effort */ } }, 50);
   const procs = [1, 2, 3, 4, 5].map((i) => Bun.spawn({
     cmd: [process.execPath, BOLT, "start", "--name", `unit-${i}`, "--batch", "1", "--walking-skeleton", "false", "--project-dir", proj],
     stdout: "pipe", stderr: "pipe", timeout: 150_000,
@@ -30,6 +33,7 @@ async function race(loop: number, r: number) {
     const [code, stderr] = await Promise.all([p.exited, new Response(p.stderr).text(), new Response(p.stdout).text()]);
     return { unit: index + 1, pid: p.pid, code, signal: p.signalCode, ms: Math.round(performance.now() - start), stderr: stderr.slice(0, 2000) };
   }));
+  clearInterval(sampler);
   const ms = Math.round(performance.now() - start);
   const stalled = process.env.DEBUG_KEEP === "1" || ms > 15_000 || children.some((child) => child.code !== 0);
   writeFileSync(join(trace, "race.json"), JSON.stringify({ loop, r, ms, stalled, children }, null, 1));
@@ -39,11 +43,15 @@ async function race(loop: number, r: number) {
   return { ms, stalled };
 }
 
+// Oversubscribe the CPU like a parallel integration tier on a 4-vCPU runner.
+const burners = Array.from({ length: Number(process.env.DEBUG_BURNERS ?? 0) }, () =>
+  Bun.spawn({ cmd: [process.execPath, "-e", "for(;;){}"], stdout: "ignore", stderr: "ignore" }));
 const all = await Promise.all(Array.from({ length: loops }, async (_, loop) => {
   const results: Array<{ ms: number; stalled: boolean }> = [];
   for (let r = 1; r <= races; r++) results.push(await race(loop, r));
   return results;
 }));
+for (const burner of burners) burner.kill();
 const flat = all.flat();
 const summary = {
   races: flat.length, stalled: flat.filter((x) => x.stalled).length,
