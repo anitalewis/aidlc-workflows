@@ -138,14 +138,23 @@ describe("Darwin supervisor ownership checks", () => {
   });
 });
 
+/** KERN_PROCARGS2 bytes: argc, executable path, padding, argv, then environ. */
+function procArgs(env: string[]): Uint8Array {
+  const argc = Buffer.alloc(4);
+  argc.writeUInt32LE(1, 0);
+  return Buffer.concat([argc, Buffer.from(`/bin/sleep\0\0\0sleep\0${env.map((value) => `${value}\0`).join("")}\0`)]);
+}
+
 /** A fake libSystem over a process table; the supervisor is this process. */
-function darwinTable(options: { unreadableOnArgs?: boolean } = {}) {
+function darwinTable(options: { unreadableOnArgs?: boolean; detachedTokenBearer?: boolean } = {}) {
   type Row = { ppid: number; uid: number; start: bigint; state: "readable" | "unreadable" | "gone" };
   const rows = new Map<number, Row>([
     [process.ppid, { ppid: 1, uid: 501, start: 1000n, state: "readable" }],
     [process.pid, { ppid: process.ppid, uid: 501, start: 2000n, state: "readable" }],
     [5001, { ppid: process.pid, uid: 501, start: 3000n, state: "readable" }],
   ]);
+  // A double-forked descendant under launchd, owned only through the token.
+  if (options.detachedTokenBearer) rows.set(6001, { ppid: 1, uid: 501, start: 4000n, state: "readable" });
   const signaled: number[] = [];
   const api: DarwinProcessCalls = {
     tui_listpids(buffer) {
@@ -167,16 +176,25 @@ function darwinTable(options: { unreadableOnArgs?: boolean } = {}) {
       return 136;
     },
     tui_argmax: () => 4096,
-    tui_procargs(pid) {
+    tui_procargs(pid, buffer) {
       // Arguments are hidden, so ownership comes from ancestry. Optionally the
       // descendant turns unreadable between the scan and its recheck.
       if (options.unreadableOnArgs && pid === 5001) rows.get(5001)!.state = "unreadable";
+      if (pid === 6001 && rows.get(6001)?.state === "readable") {
+        // Its token-bearing arguments read, then it turns unreadable (setuid exec).
+        const args = procArgs([`AIDLC_TUI_CONTAINMENT=${containment.env!.AIDLC_TUI_CONTAINMENT}`]);
+        buffer.set(args);
+        rows.get(6001)!.state = "unreadable";
+        return args.length;
+      }
       return -1;
     },
     tui_kill(pid) { signaled.push(pid); return 0; },
     tui_waitid: () => -10, // ECHILD: the survivor is not the supervisor's child.
   };
-  return { rows, signaled, containment: darwinContainment(process.ppid, api, null) };
+  const containment = darwinContainment(process.ppid, api, null);
+  if (options.detachedTokenBearer) rows.get(5001)!.state = "gone";
+  return { rows, signaled, containment };
 }
 
 describe("Darwin containment rechecks", () => {
@@ -194,6 +212,15 @@ describe("Darwin containment rechecks", () => {
     expect(containment.sweep(true, undefined, deadline())).toBe(false);
     expect(signaled).toEqual([5001]);
     rows.get(5001)!.state = "gone";
+    expect(containment.sweep(true, undefined, deadline())).toBe(true);
+  });
+
+  test("a detached token-bearing process that turns unreadable after its arguments are read stays unresolved", () => {
+    const { rows, signaled, containment } = darwinTable({ detachedTokenBearer: true });
+    expect(containment.sweep(true, undefined, deadline())).toBe(false);
+    expect(containment.sweep(true, undefined, deadline())).toBe(false);
+    expect(signaled).toEqual([]);
+    rows.get(6001)!.state = "gone";
     expect(containment.sweep(true, undefined, deadline())).toBe(true);
   });
 

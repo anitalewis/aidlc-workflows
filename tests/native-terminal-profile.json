@@ -246,6 +246,10 @@
             {
               "classname": "Darwin containment rechecks",
               "name": "a process that turns unreadable before its signal is kept unsignaled without failing the sweep"
+            },
+            {
+              "classname": "Darwin containment rechecks",
+              "name": "a detached token-bearing process that turns unreadable after its arguments are read stays unresolved"
             }
           ]
         },
@@ -1081,6 +1085,10 @@
             {
               "classname": "Darwin containment rechecks",
               "name": "a process that turns unreadable before its signal is kept unsignaled without failing the sweep"
+            },
+            {
+              "classname": "Darwin containment rechecks",
+              "name": "a detached token-bearing process that turns unreadable after its arguments are read stays unresolved"
             }
           ]
         },
@@ -1945,6 +1953,10 @@
             {
               "classname": "Darwin containment rechecks",
               "name": "a process that turns unreadable before its signal is kept unsignaled without failing the sweep"
+            },
+            {
+              "classname": "Darwin containment rechecks",
+              "name": "a detached token-bearing process that turns unreadable after its arguments are read stays unresolved"
             }
           ]
         },

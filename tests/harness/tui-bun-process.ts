@@ -593,7 +593,10 @@ export function darwinContainment(parentPid: number, api: DarwinProcessCalls, li
   let pids = new Int32Array(256);
   const token = randomUUID();
   const retained = new Map<number, DarwinProcessIdentity>();
+  // Processes whose arguments were read but whose recheck then hit EPERM.
+  let unreadableCandidates: DarwinProcessIdentity[] = [];
   const snapshot = (deadline: number): Map<number, DarwinProcessIdentity> => {
+    unreadableCandidates = [];
     let bytes: number;
     while (true) {
       withinDeadline(deadline);
@@ -622,7 +625,14 @@ export function darwinContainment(parentPid: number, api: DarwinProcessCalls, li
       if (size < 0) throw failure(`sysctl(KERN_PROCARGS2, ${identity.pid})`, size);
       if (size > argumentsBuffer.byteLength) throw new Error("oversized Darwin process arguments");
       const current = recheckIdentity(identity.pid);
-      if (current && current !== DARWIN_UNREADABLE && sameDarwinProcess(identity, current)) {
+      if (current === DARWIN_UNREADABLE) {
+        // The arguments cannot be tied to this process any more. If they carry
+        // our token, or cannot be read as arguments, it may be a detached
+        // descendant: keep it unresolved rather than let it drop out of cleanup.
+        let env: string[] | null = null;
+        try { env = parseDarwinProcArgs(argumentsBuffer.subarray(0, size)).env; } catch { /* not arguments */ }
+        if (!env || env.includes(`AIDLC_TUI_CONTAINMENT=${token}`)) unreadableCandidates.push(identity);
+      } else if (current && sameDarwinProcess(identity, current)) {
         identity.env = parseDarwinProcArgs(argumentsBuffer.subarray(0, size)).env;
       }
     }
@@ -650,6 +660,9 @@ export function darwinContainment(parentPid: number, api: DarwinProcessCalls, li
         if (current === DARWIN_UNREADABLE || (current && sameDarwinProcess(current, previous))) {
           unresolved.push(previous);
         }
+      }
+      for (const candidate of unreadableCandidates) {
+        if (!unresolved.some((previous) => previous.pid === candidate.pid)) unresolved.push(candidate);
       }
       const owned: DarwinProcessIdentity[] = [];
       for (const identity of processes.values()) {
