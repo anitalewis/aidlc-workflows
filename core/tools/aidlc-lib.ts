@@ -25390,11 +25390,16 @@ function acquireNativeGateMutex(
   maxRetries = 100,
   retryMs = 5,
 ): NativeGateMutexReceipt | null {
+  const began = performance.now();
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const receipt = tryAcquireNativeGateMutex(lockDir);
-    if (receipt) return receipt;
+    if (receipt) {
+      if (attempt > 20) lockTrace("mutex-slow", { lock: basename(lockDir), attempt, ms: Math.round(performance.now() - began) });
+      return receipt;
+    }
     if (attempt < maxRetries) Bun.sleepSync(retryMs);
   }
+  lockTrace("mutex-fail", { lock: basename(lockDir), ms: Math.round(performance.now() - began) });
   return null;
 }
 
@@ -25666,6 +25671,18 @@ function reapClaimDir(lockDir: string): string {
   return `${lockDir}.reap`;
 }
 
+// DEBUG ONLY (debug/windows-lock-livelock): per-process lock trace.
+function lockTrace(event: string, detail: Record<string, unknown> = {}): void {
+  const dir = process.env.AIDLC_LOCK_TRACE_DIR;
+  if (!dir) return;
+  try {
+    appendFileSync(join(dir, `${process.pid}.log`), `${JSON.stringify({ t: Number((performance.timeOrigin + performance.now()).toFixed(1)), event, ...detail })}\n`);
+  } catch { /* debug only */ }
+}
+function errCode(error: unknown): string {
+  return String((error as NodeJS.ErrnoException)?.code ?? (error as Error)?.message ?? error);
+}
+
 function reapPrivateDir(lockDir: string, claimToken: string): string {
   return `${lockDir}.dead.${claimToken}`;
 }
@@ -25691,7 +25708,8 @@ function tryCreateOwnerStampedDir(
     );
     const owner = writeOwnerStamp(candidate, reapLiveOwnerAfterStale, token);
     if (!owner?.token) throw new Error("owner stamp failed");
-    renameSync(candidate, dir);
+    try { renameSync(candidate, dir); }
+    catch (error) { lockTrace("create-dir-rename-fail", { dir: basename(dir), code: errCode(error), exists: existsSync(dir) }); throw error; }
     return {
       lockDir: dir,
       tokenDir: join(dir, token),
@@ -25815,8 +25833,9 @@ function retryPendingReapGateRelease(claimDir: string): boolean {
     clearPendingReapGateRelease(claimDir);
     return true;
   }
-  if (!markReapGateReleasable(pending.receipt)) return false;
+  if (!markReapGateReleasable(pending.receipt)) { lockTrace("pending-gate-mark-failed"); return false; }
   const outcome = releaseOwnerStampedLock(pending.receipt, false, true);
+  lockTrace("pending-gate-release", { outcome });
   if (outcome === "retryable") return false;
   clearPendingReapGateRelease(claimDir);
   return true;
@@ -25825,35 +25844,39 @@ function retryPendingReapGateRelease(claimDir: string): boolean {
 function acquireReapClaim(lockDir: string): OwnerStampedLockReceipt | null {
   const claimDir = reapClaimDir(lockDir);
   const mutex = acquireNativeGateMutex(lockDir);
-  if (!mutex) return null;
+  if (!mutex) { lockTrace("gate-null", { why: "mutex" }); return null; }
   try {
-    if (!retryPendingReapGateRelease(claimDir)) return null;
+    if (!retryPendingReapGateRelease(claimDir)) { lockTrace("gate-null", { why: "own-pending-release" }); return null; }
     for (let attempt = 0; attempt <= 3; attempt++) {
       const created = tryCreateOwnerStampedDir(claimDir, false);
-      if (created) return created;
+      if (created) { lockTrace("gate-acquired", { attempt }); return created; }
       const inspected = inspectOwnerStamp(claimDir);
       if (inspected.status === "ok") {
         const releaseState = reapGateReleaseState(claimDir, inspected.owner);
-        if (releaseState === "invalid") return null;
+        if (releaseState === "invalid") { lockTrace("gate-null", { why: "release-state-invalid", holder: inspected.owner.pid }); return null; }
         if (releaseState === "releasable") {
           AUDIT_LOCK_FAULT_HOOKS_FOR_TESTS?.afterReleasableGateCheck?.(
             claimDir,
           );
-          if (!retireReapClaim(claimDir)) return null;
+          if (!retireReapClaim(claimDir)) { lockTrace("gate-null", { why: "retire-releasable-failed", holder: inspected.owner.pid }); return null; }
+          lockTrace("gate-retired-releasable", { holder: inspected.owner.pid });
           continue;
         }
         const state = ownerProcessState(inspected.owner);
-        if (state === "same" || state === "unknown") return null;
-        if (!recoverReapClaim(lockDir, inspected.owner)) return null;
+        if (state === "same" || state === "unknown") { lockTrace("gate-null", { why: `held-${state}`, holder: inspected.owner.pid }); return null; }
+        if (!recoverReapClaim(lockDir, inspected.owner)) { lockTrace("gate-null", { why: `recover-failed-${state}`, holder: inspected.owner.pid }); return null; }
+        lockTrace("gate-recovered", { state, holder: inspected.owner.pid });
       } else if (inspected.status === "missing") {
         const mtime = lockDirMtimeMs(claimDir);
-        if (mtime === null || lockAcquireEpochMs() - mtime <= unstampedGraceMs()) return null;
-        if (!retireReapClaim(claimDir)) return null;
+        if (mtime === null || lockAcquireEpochMs() - mtime <= unstampedGraceMs()) { lockTrace("gate-null", { why: "unstamped-young" }); return null; }
+        if (!retireReapClaim(claimDir)) { lockTrace("gate-null", { why: "retire-unstamped-failed" }); return null; }
       } else {
         // Invalid/unreadable claim ownership is ambiguous and remains fail-closed.
+        lockTrace("gate-null", { why: `stamp-${inspected.status}`, code: (inspected as { code?: string }).code });
         return null;
       }
     }
+    lockTrace("gate-null", { why: "exhausted" });
     return null;
   } finally {
     releaseNativeGateMutex(mutex);
@@ -25876,6 +25899,7 @@ function releaseReapClaim(receipt: OwnerStampedLockReceipt): boolean {
       releaseNativeGateMutex(mutex);
     }
   }
+  lockTrace("gate-release", { mutex: !!mutex, outcome });
   if (outcome !== "retryable") {
     clearPendingReapGateRelease(receipt.lockDir);
     return true;
@@ -25969,14 +25993,18 @@ function releaseOwnerStampedLock(
   applyGateFaultHooks = false,
 ): LockReleaseOutcome {
   let checked = false;
+  const codes: Record<string, number> = {};
+  const began = performance.now();
   for (let attempt = 0; attempt <= 100; attempt++) {
     const current = inspectOwnerStamp(receipt.lockDir);
-    if (current.status === "missing" && !existsSync(receipt.lockDir)) return "not-owner";
+    if (current.status === "missing" && !existsSync(receipt.lockDir)) { lockTrace("release-not-owner", { lock: basename(receipt.lockDir), why: "missing", attempt, codes }); return "not-owner"; }
     if (current.status !== "ok") {
+      const key = `stamp-${current.status}-${(current as { code?: string }).code ?? ""}`;
+      codes[key] = (codes[key] ?? 0) + 1;
       if (attempt < 100) Bun.sleepSync(5);
       continue;
     }
-    if (!ownerStampsEqual(current.owner, receipt.owner)) return "not-owner";
+    if (!ownerStampsEqual(current.owner, receipt.owner)) { lockTrace("release-not-owner", { lock: basename(receipt.lockDir), why: "stamp-differs", attempt, codes }); return "not-owner"; }
     if (!checked && applyFaultHooks) {
       checked = true;
       AUDIT_LOCK_FAULT_HOOKS_FOR_TESTS?.afterReleaseOwnerCheck?.(receipt.lockDir);
@@ -26005,11 +26033,15 @@ function releaseOwnerStampedLock(
     try {
       renameSync(receipt.lockDir, retired);
       try { rmSync(retired, { recursive: true, force: true }); } catch { /* private debris */ }
+      if (attempt > 0) lockTrace("release-renamed", { lock: basename(receipt.lockDir), attempt, ms: Math.round(performance.now() - began), codes });
       return "released";
-    } catch {
+    } catch (error) {
+      const key = `rename-${errCode(error)}`;
+      codes[key] = (codes[key] ?? 0) + 1;
       if (attempt < 100) Bun.sleepSync(5);
     }
   }
+  lockTrace("release-retryable", { lock: basename(receipt.lockDir), ms: Math.round(performance.now() - began), codes });
   return "retryable";
 }
 
@@ -26025,17 +26057,20 @@ function releaseCanonicalOwnerStampedLock(
   // that work.
   const budgetMs = Math.max(500, receipt.releaseBudgetMs ?? 0);
   const deadline = process.hrtime.bigint() + BigInt(Math.ceil(budgetMs)) * 1_000_000n;
+  let loops = 0; let gateMisses = 0;
   for (;;) {
+    loops++;
     const gate = acquireReapClaim(receipt.lockDir);
     if (gate) {
       try {
         const outcome = releaseOwnerStampedLock(receipt);
-        if (outcome !== "retryable") return outcome;
+        if (outcome !== "retryable") { lockTrace("canonical-release", { outcome, loops, gateMisses }); return outcome; }
       } finally {
         releaseReapClaim(gate);
       }
-    }
-    if (process.hrtime.bigint() >= deadline) return "retryable";
+    } else gateMisses++;
+    if (loops % 200 === 0) lockTrace("canonical-release-looping", { loops, gateMisses });
+    if (process.hrtime.bigint() >= deadline) { lockTrace("canonical-release", { outcome: "retryable-deadline", loops, gateMisses }); return "retryable"; }
     Bun.sleepSync(5);
   }
 }
@@ -26075,7 +26110,7 @@ function acquireOwnerStampedLock(
     // coordinated create/recovery protocol and its exclusive mkdir.
     if (existsSync(lockDir)) return null;
     const gate = acquireReapClaim(lockDir);
-    if (!gate) return null;
+    if (!gate) { lockTrace("create-no-gate"); return null; }
     try {
       mkdirSync(lockDir, { mode: 0o700 });
       const token = randomUUID();
@@ -26101,23 +26136,33 @@ function acquireOwnerStampedLock(
         owner: owner as LockOwner & { token: string },
         releaseBudgetMs: maxRetries * retryMs,
       };
+      lockTrace("lock-acquired", { lock: basename(lockDir) });
       return receipt;
     } catch (error) {
+      lockTrace("create-failed", { code: errCode(error) });
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") return null;
       return null;
     } finally {
       releaseReapClaim(gate);
     }
   };
+  lockTrace("acquire-start", { lock: basename(lockDir), maxRetries, retryMs });
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const acquired = create();
     if (acquired) return acquired;
     if (reapStaleLock(lockDir)) {
+      lockTrace("reaped", { attempt });
       const afterReap = create();
       if (afterReap) return afterReap;
     }
+    if (attempt % 20 === 0) {
+      const stamp = inspectOwnerStamp(lockDir);
+      const gate = inspectOwnerStamp(reapClaimDir(lockDir));
+      lockTrace("acquire-waiting", { attempt, lockExists: existsSync(lockDir), holder: stamp.status === "ok" ? stamp.owner.pid : stamp.status, gate: gate.status === "ok" ? gate.owner.pid : gate.status });
+    }
     if (attempt < maxRetries) Bun.sleepSync(retryMs);
   }
+  lockTrace("acquire-gave-up", { lock: basename(lockDir) });
   return null;
 }
 

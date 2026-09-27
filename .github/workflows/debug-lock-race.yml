@@ -1,0 +1,31 @@
+name: Debug lock race (temporary)
+# DEBUG ONLY: never merged. Repeats t46's audit race on Windows with lock traces.
+on:
+  push:
+    branches: [debug/windows-lock-livelock]
+permissions:
+  contents: read
+jobs:
+  race:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: '1.4.2'
+      - run: bun install --frozen-lockfile
+      - run: bun scripts/package.ts
+      - name: Race
+        run: bun scripts/debug-lock-race.ts 40 4 tmp/lock-race
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: lock-race
+          path: tmp/lock-race
+          if-no-files-found: warn
