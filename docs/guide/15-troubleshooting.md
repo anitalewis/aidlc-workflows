@@ -426,15 +426,14 @@ refuses with "requires the actual offered choice from this prompt and session",
 or the decision command refuses because its `--session` "is the placeholder
 owner of a directive issued outside a live chat session".
 
-Your answer binds only to the chat session you typed it in. This happens after
-the IDE window reloads, when a new chat is opened, or when the assistant passed
-a value other than its own `AIDLC Runtime Session:` line. The refusal says what
-to do next and, when known, names the session most recently active in this
-project; the assistant records
-the decision again with its own session value and presents the question again,
-and you answer it there. If the conversation has no `AIDLC Runtime Session:`
-line, start a new chat session and run `/aidlc` (`$aidlc` on Codex) to be
-offered the question again.
+Your answer binds only to the chat session you typed it in. This happens when
+the chat session changes (a new chat, or one your tool started again), or when
+the assistant passed a value other than its own `AIDLC Runtime Session:` line.
+The refusal says what to do next and, when known, names the session most
+recently active in this project; the assistant records the decision again with
+its own session value and presents the question again, and you answer it there.
+If the conversation has no `AIDLC Runtime Session:` line, start a new chat
+session and run `/aidlc` (`$aidlc` on Codex) to be offered the question again.
 
 "Plan Approval found no recorded fingerprint" means the questions file has no
 section headed exactly `## Plan Approval` (`## Q1: Plan Approval` also works).
