@@ -26155,6 +26155,7 @@ function acquireOwnerStampedLock(
       const afterReap = create();
       if (afterReap) return afterReap;
     }
+    retryOwnDeferredGateRelease(lockDir);
     if (attempt % 20 === 0) {
       // Handle-free probes only: reading inside a lock directory is itself
       // what Windows refuses a lock rename for.
@@ -26164,6 +26165,18 @@ function acquireOwnerStampedLock(
   }
   lockTrace("acquire-gave-up", { lock: basename(lockDir) });
   return null;
+}
+
+function retryOwnDeferredGateRelease(lockDir: string): void {
+  const claimDir = reapClaimDir(lockDir);
+  if (!PENDING_REAP_GATE_RELEASES.has(claimDir)) return;
+  const mutex = acquireNativeGateMutex(lockDir);
+  if (!mutex) { lockTrace("deferred-retry-no-mutex"); return; }
+  try {
+    lockTrace("deferred-retry", { released: retryPendingReapGateRelease(claimDir) });
+  } finally {
+    releaseNativeGateMutex(mutex);
+  }
 }
 
 export type OwnerStampedLockRun<T> =
