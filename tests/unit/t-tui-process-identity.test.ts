@@ -17,6 +17,7 @@ import {
   getNativeProcessIdentityWithBun,
   parseDarwinProcBsdInfo,
   parseLinuxNativeProcessIdentity,
+  DARWIN_UNREADABLE,
   readDarwinProcessIdentity,
   readLinuxNativeProcessIdentity,
   readWindowsNativeProcessIdentity,
@@ -130,11 +131,12 @@ describe("Darwin native process identity", () => {
     expect(snapshot.map((identity) => identity.pid)).toEqual([42]);
     expect(() => readDarwinProcessIdentity(43, api)).toThrow("errno 1");
     expect(() => readDarwinProcessIdentity(45, api, undefined, "enumeration")).toThrow("errno 5");
-    // A scanned process that became unreadable (setuid exec or a reused PID)
-    // is no longer ours, so its recheck reports absence; EIO still fails closed.
-    expect(readDarwinProcessIdentity(43, api, undefined, "recheck")).toBeNull();
+    // A recheck of a scanned process reports EPERM as unreadable, never as
+    // absence; ESRCH is absence and EIO still fails closed.
+    expect(readDarwinProcessIdentity(43, api, undefined, "recheck")).toBe(DARWIN_UNREADABLE);
     expect(readDarwinProcessIdentity(44, api, undefined, "recheck")).toBeNull();
-    expect(readDarwinProcessIdentity(42, api, undefined, "recheck")?.pid).toBe(42);
+    const readable = readDarwinProcessIdentity(42, api, undefined, "recheck");
+    expect(readable === DARWIN_UNREADABLE ? null : readable?.pid).toBe(42);
     expect(() => readDarwinProcessIdentity(45, api, undefined, "recheck")).toThrow("errno 5");
   });
 });

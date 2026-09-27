@@ -2,6 +2,7 @@
 // independently selectable in t-tui-bun-process-{linux,darwin}.test.ts.
 import { describe, expect, test } from "bun:test";
 import {
+  darwinContainment, type DarwinProcessCalls,
   isDarwinDescendant, parseDarwinProcArgs, sameDarwinProcess,
   isLinuxDescendant, type LinuxProcessIdentity, parseLinuxProcStat, sameLinuxProcess,
   terminateWindowsJobMember, type WindowsJobTerminationApi,
@@ -134,6 +135,75 @@ describe("Darwin supervisor ownership checks", () => {
     expect(sameDarwinProcess(stale, { ...stale, startSec: stale.startSec + 1n })).toBe(false);
     expect(isDarwinDescendant(stale, owner, new Map([[owner.pid, owner], [reused.pid, reused]]), "ours"))
       .toBe(false);
+  });
+});
+
+/** A fake libSystem over a process table; the supervisor is this process. */
+function darwinTable(options: { unreadableOnArgs?: boolean } = {}) {
+  type Row = { ppid: number; uid: number; start: bigint; state: "readable" | "unreadable" | "gone" };
+  const rows = new Map<number, Row>([
+    [process.ppid, { ppid: 1, uid: 501, start: 1000n, state: "readable" }],
+    [process.pid, { ppid: process.ppid, uid: 501, start: 2000n, state: "readable" }],
+    [5001, { ppid: process.pid, uid: 501, start: 3000n, state: "readable" }],
+  ]);
+  const signaled: number[] = [];
+  const api: DarwinProcessCalls = {
+    tui_listpids(buffer) {
+      const pids = [...rows].filter(([, row]) => row.state !== "gone").map(([pid]) => pid);
+      buffer.set(pids);
+      return pids.length * 4;
+    },
+    tui_pidinfo(pid, buffer) {
+      const row = rows.get(pid);
+      if (!row || row.state === "gone") return -3; // ESRCH
+      if (row.state === "unreadable") return -1; // EPERM
+      buffer.fill(0);
+      const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+      view.setUint32(4, 2, true); // SRUN
+      view.setUint32(12, pid, true);
+      view.setUint32(16, row.ppid, true);
+      view.setUint32(20, row.uid, true);
+      view.setBigUint64(120, row.start, true);
+      return 136;
+    },
+    tui_argmax: () => 4096,
+    tui_procargs(pid) {
+      // Arguments are hidden, so ownership comes from ancestry. Optionally the
+      // descendant turns unreadable between the scan and its recheck.
+      if (options.unreadableOnArgs && pid === 5001) rows.get(5001)!.state = "unreadable";
+      return -1;
+    },
+    tui_kill(pid) { signaled.push(pid); return 0; },
+    tui_waitid: () => -10, // ECHILD: the survivor is not the supervisor's child.
+  };
+  return { rows, signaled, containment: darwinContainment(process.ppid, api, null) };
+}
+
+describe("Darwin containment rechecks", () => {
+  // Full Suite 36341941597 (t29, macOS): a scanned descendant that becomes
+  // EPERM-unreadable (a setuid exec such as /bin/ps, or a reused PID) proves
+  // neither exit nor replacement, so it must neither fail nor finish cleanup.
+  const deadline = () => Date.now() + 60_000;
+
+  test("an owned process that stays unreadable keeps cleanup unconfirmed until it is gone", () => {
+    const { rows, signaled, containment } = darwinTable();
+    expect(containment.sweep(false, undefined, deadline())).toBe(false);
+    expect(signaled).toEqual([5001]);
+    rows.get(5001)!.state = "unreadable";
+    expect(containment.sweep(true, undefined, deadline())).toBe(false);
+    expect(containment.sweep(true, undefined, deadline())).toBe(false);
+    expect(signaled).toEqual([5001]);
+    rows.get(5001)!.state = "gone";
+    expect(containment.sweep(true, undefined, deadline())).toBe(true);
+  });
+
+  test("a process that turns unreadable before its signal is kept unsignaled without failing the sweep", () => {
+    const { rows, signaled, containment } = darwinTable({ unreadableOnArgs: true });
+    expect(containment.sweep(true, undefined, deadline())).toBe(false);
+    expect(signaled).toEqual([]);
+    expect(containment.sweep(true, undefined, deadline())).toBe(false);
+    rows.get(5001)!.state = "gone";
+    expect(containment.sweep(true, undefined, deadline())).toBe(true);
   });
 });
 

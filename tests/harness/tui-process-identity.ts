@@ -70,23 +70,33 @@ export interface DarwinIdentityApi {
   tui_pidinfo(pid: number, buffer: Uint8Array): number;
 }
 
+/** A recheck that could not read the process: EPERM proves neither exit nor replacement. */
+export const DARWIN_UNREADABLE = "unreadable";
+
 /** The caller returns -errno, captured immediately in the native call or its adapter. */
+export function readDarwinProcessIdentity(
+  pid: number, api: DarwinIdentityApi, buffer?: Uint8Array, mode?: "required" | "enumeration",
+): DarwinProcessIdentity | null;
+export function readDarwinProcessIdentity(
+  pid: number, api: DarwinIdentityApi, buffer: Uint8Array | undefined, mode: "recheck",
+): DarwinProcessIdentity | null | typeof DARWIN_UNREADABLE;
 export function readDarwinProcessIdentity(
   pid: number,
   api: DarwinIdentityApi,
-  buffer = new Uint8Array(DARWIN_BSDINFO_SIZE),
+  buffer: Uint8Array = new Uint8Array(DARWIN_BSDINFO_SIZE),
   mode: "required" | "enumeration" | "recheck" = "required",
-): DarwinProcessIdentity | null {
+): DarwinProcessIdentity | null | typeof DARWIN_UNREADABLE {
   validatePid(pid);
   if (buffer.byteLength !== DARWIN_BSDINFO_SIZE) throw new Error("Darwin process identity requires a 136-byte buffer");
   const count = api.tui_pidinfo(pid, buffer);
   if (count === -3) return null; // ESRCH
-  // System-wide scans encounter other users' and protected processes, and a
-  // process a scan found can stop being ours before its recheck: it execs a
-  // setuid binary such as /bin/ps, or exits and another user reuses its PID
-  // (Full Suite 36341941597, t29 on macOS). Only those callers exclude EPERM;
-  // required ownership reads fail closed.
-  if (count === -1 && mode !== "required") return null; // EPERM
+  // System-wide scans encounter other users' and protected processes, and only
+  // they exclude EPERM. A recheck of a process a scan found reports it as
+  // unreadable, never absent: a setuid exec such as /bin/ps or another user's
+  // reused PID (Full Suite 36341941597, t29 on macOS) proves no exit. Required
+  // ownership reads fail closed.
+  if (count === -1 && mode === "enumeration") return null; // EPERM
+  if (count === -1 && mode === "recheck") return DARWIN_UNREADABLE;
   if (count < 0) throw new Error(`proc_pidinfo(${pid}) failed: errno ${-count}`);
   if (count !== DARWIN_BSDINFO_SIZE) throw new Error(`proc_pidinfo(${pid}) returned ${count} bytes, expected 136`);
   return parseDarwinProcBsdInfo(pid, buffer);

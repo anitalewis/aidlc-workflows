@@ -22,7 +22,10 @@ import {
 } from "node:fs";
 import { constants as osConstants, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
-import { DARWIN_BSDINFO_SIZE, type DarwinProcessIdentity, readDarwinProcessIdentity } from "./tui-process-identity.ts";
+import {
+  DARWIN_BSDINFO_SIZE, DARWIN_UNREADABLE, type DarwinIdentityApi, type DarwinProcessIdentity,
+  readDarwinProcessIdentity,
+} from "./tui-process-identity.ts";
 import { publishTuiRecord } from "./tui-record-file.ts";
 import {
   FILE_DEADLINE_ENV, remainingCleanupTimeoutMs, remainingOperationTimeoutMs,
@@ -551,14 +554,24 @@ int tui_waitid(int type, unsigned int id, void *info, int options) {
 }
 
 
+/** The libSystem calls Darwin containment makes; tests supply a fake. */
+export interface DarwinProcessCalls extends DarwinIdentityApi {
+  tui_listpids(buffer: Int32Array, bytes: number): number;
+  tui_argmax(): number;
+  tui_procargs(pid: number, buffer: Uint8Array, bytes: number): number;
+  tui_kill(pid: number, signal: number): number;
+  tui_waitid(idtype: number, id: number, info: BigUint64Array, options: number): number;
+}
+
 async function containDarwin(parentPid: number): Promise<Containment> {
   const library = await loadDarwinProcessCalls();
-  const api = library.symbols;
+  return darwinContainment(parentPid, library.symbols as unknown as DarwinProcessCalls, library);
+}
+
+export function darwinContainment(parentPid: number, api: DarwinProcessCalls, library: unknown): Containment {
   const failure = (call: string, result: number): Error => new Error(`${call} failed: errno ${-result}`);
   const identityBuffer = new Uint8Array(DARWIN_BSDINFO_SIZE);
   const readIdentity = (pid: number) => readDarwinProcessIdentity(pid, api, identityBuffer);
-  // A scanned process that is no longer readable as ours is skipped like any
-  // other identity mismatch; kill() could not signal it either.
   const recheckIdentity = (pid: number) => readDarwinProcessIdentity(pid, api, identityBuffer, "recheck");
   const owner = readIdentity(process.pid);
   const parent = readIdentity(parentPid);
@@ -609,7 +622,7 @@ async function containDarwin(parentPid: number): Promise<Containment> {
       if (size < 0) throw failure(`sysctl(KERN_PROCARGS2, ${identity.pid})`, size);
       if (size > argumentsBuffer.byteLength) throw new Error("oversized Darwin process arguments");
       const current = recheckIdentity(identity.pid);
-      if (current && sameDarwinProcess(identity, current)) {
+      if (current && current !== DARWIN_UNREADABLE && sameDarwinProcess(identity, current)) {
         identity.env = parseDarwinProcArgs(argumentsBuffer.subarray(0, size)).env;
       }
     }
@@ -625,6 +638,19 @@ async function containDarwin(parentPid: number): Promise<Containment> {
     sweep(force, targetPid, deadline, signalOnly = false) {
       const observationDeadline = signalOnly ? Infinity : deadline;
       const processes = snapshot(observationDeadline);
+      // Enumeration drops EPERM-unreadable processes. A process we owned that
+      // became unreadable (a setuid exec, or a PID another user reused) is not
+      // proven gone: keep it, unsignaled, and leave cleanup unconfirmed until a
+      // recheck sees ESRCH or a different process under that PID.
+      const unresolved: DarwinProcessIdentity[] = [];
+      for (const previous of retained.values()) {
+        if (processes.has(previous.pid)) continue;
+        withinDeadline(observationDeadline);
+        const current = recheckIdentity(previous.pid);
+        if (current === DARWIN_UNREADABLE || (current && sameDarwinProcess(current, previous))) {
+          unresolved.push(previous);
+        }
+      }
       const owned: DarwinProcessIdentity[] = [];
       for (const identity of processes.values()) {
         const previous = retained.get(identity.pid);
@@ -635,11 +661,14 @@ async function containDarwin(parentPid: number): Promise<Containment> {
       }
       // Retain observed ownership through zombie state, when procargs disappears.
       retained.clear();
+      for (const previous of unresolved) retained.set(previous.pid, previous);
       for (const previous of owned) {
         withinDeadline(observationDeadline);
         retained.set(previous.pid, previous);
         const current = recheckIdentity(previous.pid);
-        if (!current || !sameDarwinProcess(current, previous) || current.uid !== owner.uid) continue;
+        // An unreadable owned process stays retained and keeps this sweep open.
+        if (!current || current === DARWIN_UNREADABLE || !sameDarwinProcess(current, previous) ||
+          current.uid !== owner.uid) continue;
         const signaled = api.tui_kill(current.pid, force ? 9 : 15);
         if (signaled < 0 && signaled !== -3) throw failure("kill(Darwin descendant)", signaled);
         if (current.status === 5 && current.ppid === owner.pid && current.pid !== targetPid) {
@@ -650,7 +679,7 @@ async function containDarwin(parentPid: number): Promise<Containment> {
         }
       }
       withinDeadline(observationDeadline);
-      if (owned.length !== 0) return false;
+      if (owned.length !== 0 || unresolved.length !== 0) return false;
       // Observe without stealing Bun's target status. Unlike Linux's subreaper,
       // ECHILD alone is insufficient; the token-owned set must also be empty.
       const result = api.tui_waitid(0, 0, waitInfo, 0x25); // P_ALL, WEXITED | WNOHANG | WNOWAIT

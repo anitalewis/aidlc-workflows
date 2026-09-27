@@ -238,6 +238,14 @@
             {
               "classname": "Windows job member termination races",
               "name": "persistent denial remains an error after one finite wait, with PID and wait evidence"
+            },
+            {
+              "classname": "Darwin containment rechecks",
+              "name": "an owned process that stays unreadable keeps cleanup unconfirmed until it is gone"
+            },
+            {
+              "classname": "Darwin containment rechecks",
+              "name": "a process that turns unreadable before its signal is kept unsignaled without failing the sweep"
             }
           ]
         },
@@ -1065,6 +1073,14 @@
             {
               "classname": "Windows job member termination races",
               "name": "persistent denial remains an error after one finite wait, with PID and wait evidence"
+            },
+            {
+              "classname": "Darwin containment rechecks",
+              "name": "an owned process that stays unreadable keeps cleanup unconfirmed until it is gone"
+            },
+            {
+              "classname": "Darwin containment rechecks",
+              "name": "a process that turns unreadable before its signal is kept unsignaled without failing the sweep"
             }
           ]
         },
@@ -1921,6 +1937,14 @@
             {
               "classname": "Windows job member termination races",
               "name": "persistent denial remains an error after one finite wait, with PID and wait evidence"
+            },
+            {
+              "classname": "Darwin containment rechecks",
+              "name": "an owned process that stays unreadable keeps cleanup unconfirmed until it is gone"
+            },
+            {
+              "classname": "Darwin containment rechecks",
+              "name": "a process that turns unreadable before its signal is kept unsignaled without failing the sweep"
             }
           ]
         },
