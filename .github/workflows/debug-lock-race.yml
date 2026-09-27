@@ -23,8 +23,9 @@ jobs:
       - run: bun scripts/package.ts
       - name: Race
         env:
-          DEBUG_BURNERS: "12"
-        run: bun scripts/debug-lock-race.ts 40 6 tmp/lock-race
+          DEBUG_BURNERS: "16"
+          DEBUG_CONTENDERS: "10"
+        run: bun scripts/debug-lock-race.ts 30 6 tmp/lock-race
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

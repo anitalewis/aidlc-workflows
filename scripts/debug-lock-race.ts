@@ -24,7 +24,7 @@ async function race(loop: number, r: number) {
   const start = performance.now();
   // t46's sampler: list only the temp directory's lock names every 50 ms.
   const sampler = setInterval(() => { try { readdirSync(tmpdir()).filter((name) => name.startsWith(".aidlc-audit-")); } catch { /* best effort */ } }, 50);
-  const procs = [1, 2, 3, 4, 5].map((i) => Bun.spawn({
+  const procs = Array.from({ length: Number(process.env.DEBUG_CONTENDERS ?? 5) }, (_, n) => n + 1).map((i) => Bun.spawn({
     cmd: [process.execPath, BOLT, "start", "--name", `unit-${i}`, "--batch", "1", "--walking-skeleton", "false", "--project-dir", proj],
     stdout: "pipe", stderr: "pipe", timeout: 150_000,
     env: { ...process.env, AIDLC_LOCK_TRACE_DIR: trace, AIDLC_AUDIT_LOCK_TIMEOUT_MS: "60000" },
@@ -35,7 +35,7 @@ async function race(loop: number, r: number) {
   }));
   clearInterval(sampler);
   const ms = Math.round(performance.now() - start);
-  const stalled = process.env.DEBUG_KEEP === "1" || ms > 15_000 || children.some((child) => child.code !== 0);
+  const stalled = process.env.DEBUG_KEEP === "1" || ms > 45_000 || children.some((child) => child.code !== 0);
   writeFileSync(join(trace, "race.json"), JSON.stringify({ loop, r, ms, stalled, children }, null, 1));
   if (!stalled) rmSync(trace, { recursive: true, force: true });
   cleanupTestProject(proj);
