@@ -557,6 +557,9 @@ async function containDarwin(parentPid: number): Promise<Containment> {
   const failure = (call: string, result: number): Error => new Error(`${call} failed: errno ${-result}`);
   const identityBuffer = new Uint8Array(DARWIN_BSDINFO_SIZE);
   const readIdentity = (pid: number) => readDarwinProcessIdentity(pid, api, identityBuffer);
+  // A scanned process that is no longer readable as ours is skipped like any
+  // other identity mismatch; kill() could not signal it either.
+  const recheckIdentity = (pid: number) => readDarwinProcessIdentity(pid, api, identityBuffer, "recheck");
   const owner = readIdentity(process.pid);
   const parent = readIdentity(parentPid);
   if (!owner || !parent || owner.ppid !== parentPid || darwinStartedAfter(parent, owner)) {
@@ -605,7 +608,7 @@ async function containDarwin(parentPid: number): Promise<Containment> {
       if ([-3, -22, -1, -13, -5].includes(size)) continue;
       if (size < 0) throw failure(`sysctl(KERN_PROCARGS2, ${identity.pid})`, size);
       if (size > argumentsBuffer.byteLength) throw new Error("oversized Darwin process arguments");
-      const current = readIdentity(identity.pid);
+      const current = recheckIdentity(identity.pid);
       if (current && sameDarwinProcess(identity, current)) {
         identity.env = parseDarwinProcArgs(argumentsBuffer.subarray(0, size)).env;
       }
@@ -635,7 +638,7 @@ async function containDarwin(parentPid: number): Promise<Containment> {
       for (const previous of owned) {
         withinDeadline(observationDeadline);
         retained.set(previous.pid, previous);
-        const current = readIdentity(previous.pid);
+        const current = recheckIdentity(previous.pid);
         if (!current || !sameDarwinProcess(current, previous) || current.uid !== owner.uid) continue;
         const signaled = api.tui_kill(current.pid, force ? 9 : 15);
         if (signaled < 0 && signaled !== -3) throw failure("kill(Darwin descendant)", signaled);
