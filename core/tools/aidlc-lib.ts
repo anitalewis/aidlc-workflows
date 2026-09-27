@@ -26156,9 +26156,9 @@ function acquireOwnerStampedLock(
       if (afterReap) return afterReap;
     }
     if (attempt % 20 === 0) {
-      const stamp = inspectOwnerStamp(lockDir);
-      const gate = inspectOwnerStamp(reapClaimDir(lockDir));
-      lockTrace("acquire-waiting", { attempt, lockExists: existsSync(lockDir), holder: stamp.status === "ok" ? stamp.owner.pid : stamp.status, gate: gate.status === "ok" ? gate.owner.pid : gate.status });
+      // Handle-free probes only: reading inside a lock directory is itself
+      // what Windows refuses a lock rename for.
+      lockTrace("acquire-waiting", { attempt, lockExists: existsSync(lockDir), gateExists: existsSync(reapClaimDir(lockDir)) });
     }
     if (attempt < maxRetries) Bun.sleepSync(retryMs);
   }
