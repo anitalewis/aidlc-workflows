@@ -203,7 +203,29 @@ decision/answer/setter flow. Re-run `next` after recording it, then follow the
 new directive before verification. If no runnable project check exists yet,
 resolve that gap with the human; do not substitute a placeholder or claim a pass.
 
-When the new directive confirms `command_authorized: true`, verify with the
+If `construction_checkpoint.recovery_available` is true, offer recovery before
+running the check again. Open a separate protected question:
+
+```bash
+{{INVOKE}} engine bolt checkpoint --action ask-recovery --unit "<unit>" --kind <unit|skeleton> --session "<session ID>"
+```
+
+Present the returned `recovery_prompt` verbatim, with **Approve** and
+**Request Changes**, and wait for the human in that session. Explain that this
+trusts the earlier verification and approval without executing the command here.
+Never choose recovery automatically, including under autonomy. Record only the
+actual offered choice:
+
+```bash
+{{INVOKE}} engine bolt checkpoint --action recover --unit "<unit>" --kind <unit|skeleton> --session "<session ID>" --user-input '<Approve|Request Changes>'
+```
+
+After **Approve**, re-run `next` and follow the recovered checkpoint's route.
+After **Request Changes**, continue with local verification below. A failed
+recovery names the missing or changed evidence; re-read the directive and repair
+that condition rather than reusing a previous response.
+
+When the directive confirms `command_authorized: true`, verify with the
 recorded command:
 
 ```bash
@@ -220,12 +242,20 @@ captured checkpoint response for this intent, in any session. Ask again only
 after the new verification reports `verified: true`.
 The verifier records a tool-owned `CHECKPOINT_VERIFICATION_RECORDED` receipt
 alongside the proof file, and approval requires that receipt; a hand-written
-proof file cannot verify a Unit. The proof file is machine-local (gitignored). On a teammate's fresh clone an
-approved checkpoint stays verified from its committed receipts: the latest
-`CHECKPOINT_VERIFICATION_RECORDED` must be the approval's `Verification Id`
-with no newer `CHECKPOINT_VERIFICATION_STARTED`. A checkpoint verified elsewhere
-but not yet approved must be verified again, and a proof present on this
-machine, including an unfinished newer check, still takes precedence.
+proof file cannot verify a Unit. The proof file is machine-local (gitignored).
+A fresh clone does not trust committed receipts automatically. For an already
+approved checkpoint with a current successful receipt, `recovery_available: true`
+offers human confirmation through `checkpoint --action ask-recovery`, then
+`--action recover` with that session's actual **Approve** or **Request Changes**
+response. Approve trusts the history only on this clone, without running the
+command; Request Changes leaves it unverified so the check can run locally.
+Recovery is always human, including under autonomy. The local trust record is
+not restored from audit rows; `verification` remains `null` after recovery.
+An equivalent successful rerun preserves the content-bound approval. Each
+`CHECKPOINT_VERIFICATION_STARTED` names the attempts it supersedes, so an
+unfinished or concurrent attempt blocks verification regardless of clock skew.
+A present local proof, including an invalid or unfinished one, takes precedence.
+A checkpoint verified elsewhere but not yet approved must be verified locally.
 
 If `ready` is false or evidence became stale, explain `errors`. Repair the named
 missing review or receipt through its owning procedure, consulting the human

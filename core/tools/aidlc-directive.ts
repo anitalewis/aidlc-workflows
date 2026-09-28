@@ -225,6 +225,8 @@ export interface RunStageDirective {
     proof_path: string;
     verification_command: string | null;
     command_authorized: boolean;
+    recovery_available: boolean;
+    recovery_prompt: string | null;
   };
   swarm_checkpoint?: {
     batch: number;

@@ -37,6 +37,7 @@
 // the sibling primitives already own (Bolt Refs, Worktree Path) — this is
 // the t48 emitter-pairing rule.
 
+import { LONG_SUBPROCESS_TIMEOUT_MS, EXTENDED_SUBPROCESS_TIMEOUT_MS } from "./aidlc-runtime-budget.ts";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -80,6 +81,8 @@ import { compiledExecutable } from "./aidlc-runtime-paths.ts";
 import { type EngineInvocation, renderEngineInvocation } from "./aidlc-guard-operation.ts";
 import {
   askConstructionCheckpoint,
+  askConstructionCheckpointRecovery,
+  recoverConstructionCheckpoint,
   approveConstructionCheckpoint,
   rejectConstructionCheckpoint,
   resolveConstructionCheckpoint,
@@ -171,8 +174,8 @@ function splitBooleanFlags(args: string[]): { booleans: Set<string>; rest: strin
 
 // Spawn a sibling tool (same project-dir) and return {ok, stdout, stderr}.
 // Used by --worktree / --merge / --discard branches to delegate to
-// state-fork / audit-fork / worktree-discard subcommands. Default 30s timeout
-// matches the merge-dispatch budget; discard gets 5 minutes to snapshot source.
+// state-fork / audit-fork / worktree-discard subcommands. Compound operations
+// use the shared long backstop; discard also snapshots the source tree.
 // On timeout, signal === "SIGTERM" distinguishes it from an exit-code failure.
 function spawnSibling(
   pd: string,
@@ -208,7 +211,9 @@ function spawnSibling(
   const result = spawnSync(command[0], command.slice(1), {
     encoding: "utf-8",
     cwd: pd,
-    timeout: toolName === "aidlc-worktree.ts" && subargs[0] === "discard" ? 300_000 : 30_000,
+    timeout: toolName === "aidlc-worktree.ts" && subargs[0] === "discard"
+      ? EXTENDED_SUBPROCESS_TIMEOUT_MS
+      : LONG_SUBPROCESS_TIMEOUT_MS,
   });
   return {
     ok: result.status === 0,
@@ -1302,6 +1307,14 @@ function handleCheckpoint(args: string[]): void {
     case "ask":
       result = askConstructionCheckpoint(pd, flags.unit, checkpointKind, flags.session?.trim() ?? "");
       break;
+    case "ask-recovery":
+      result = askConstructionCheckpointRecovery(pd, flags.unit, checkpointKind, flags.session?.trim() ?? "");
+      break;
+    case "recover":
+      result = recoverConstructionCheckpoint(
+        pd, flags.unit, checkpointKind, flags["user-input"] ?? "", flags.session?.trim() ?? "",
+      );
+      break;
     case "verify":
       result = verifyConstructionCheckpoint(
         pd, flags.unit, checkpointKind,
@@ -1318,7 +1331,7 @@ function handleCheckpoint(args: string[]): void {
       );
       break;
     default:
-      error("checkpoint --action must be status, ask, verify, approve or reject");
+      error("checkpoint --action must be status, ask, verify, approve, reject, ask-recovery or recover");
   }
   console.log(JSON.stringify(result));
   if (flags.action === "verify" && !result.verified) process.exitCode = 1;
