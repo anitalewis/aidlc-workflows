@@ -4161,9 +4161,10 @@ export function requireProtectedResponse(
     response.challengeId !== question.challengeId || response.choice !== expected.choice) {
     throw new Error(`${expected.kind} requires the actual offered choice: a matching protected question, current target digest, and hook-recorded response for this session. ${recovery}`);
   }
-  if ((expected.kind === "checkpoint-approval" || expected.kind === "checkpoint-recovery") &&
-    !humanPresenceGuardDisabled() && !humanActedSinceGate(projectDir)) {
-    throw new Error(`${expected.kind} requires a fresh human turn. ${recovery}`);
+  // Recovery, like command/policy consent, uses the captured protected response.
+  // A remote gate's clock and the answer's audit row cannot invalidate it.
+  if (expected.kind === "checkpoint-approval" && !humanPresenceGuardDisabled() && !humanActedSinceGate(projectDir)) {
+    throw new Error(`checkpoint-approval requires a fresh human turn. ${recovery}`);
   }
 }
 

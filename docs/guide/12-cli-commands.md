@@ -1689,6 +1689,8 @@ Approve records local trust in that specific checkpoint history; it does not
 claim the command ran on this machine. Request Changes consumes the response
 without granting trust; run `--action verify` locally. A changed checkpoint,
 another session's response, or consent to another question cannot recover it.
+The protected response establishes consent independently of the timestamps on
+another clone's historical gates; a `HUMAN_TURN` row alone is never enough.
 Recovery retains `verification: null`; `verification_id` and
 `verification_command_sha256` identify the accepted prior result. The local
 record under `aidlc/.aidlc-sessions/plan-approval/` is gitignored and bound to

@@ -271,12 +271,13 @@ describe("t341 Construction checkpoint verification and evidence", () => {
 
   function recover(project: string, kind: "unit" | "skeleton" = "skeleton"): void {
     const session = "t341-recovery";
-    const asked = cli(project, "bolt", ["checkpoint", "--action", "ask-recovery", "--unit", "alpha", "--kind", kind, "--session", session]);
+    const env = { ...process.env, AIDLC_SKIP_HUMAN_PRESENCE_GUARD: "0" };
+    const asked = cli(project, "bolt", ["checkpoint", "--action", "ask-recovery", "--unit", "alpha", "--kind", kind, "--session", session], env);
     expect(asked.code, asked.out).toBe(0);
     expect(JSON.parse(asked.out).recovery_prompt).toContain("without running that command on this clone");
-    submitCommandChoice(project, session, "Approve");
+    submitCommandChoice(project, session, "Approve", env);
     const restored = cli(project, "bolt", ["checkpoint", "--action", "recover", "--unit", "alpha", "--kind", kind,
-      "--session", session, "--user-input", "Approve"]);
+      "--session", session, "--user-input", "Approve"], env);
     expect(restored.code, restored.out).toBe(0);
     expect(JSON.parse(restored.out)).toMatchObject({ verified: true, approved: true, verification: null });
   }
@@ -466,6 +467,26 @@ describe("t341 Construction checkpoint verification and evidence", () => {
     expect(resolveConstructionCheckpoint(dir, "alpha", "skeleton").verified).toBe(false);
     expect(readProtectedResponse(dir, session)?.choice).toBe("Approve");
     expect(recoverConstructionCheckpoint(dir, "alpha", "skeleton", "Approve", session).approved).toBe(true);
+  }, 30_000);
+
+  test("recovery requires the captured local response even when the other clone's gate clock is ahead", () => {
+    const dir = project();
+    pass(dir, "skeleton");
+    human(dir, "skeleton");
+    approveConstructionCheckpoint(dir, "alpha", "skeleton", "Approve", "t341-checkpoint");
+    const gate = approvals(dir).at(-1)!;
+    writeFileSync(gate.shard, readFileSync(gate.shard, "utf-8").replace(gate.block,
+      gate.block.replace(/\*\*Timestamp\*\*: [^\n]+/, "**Timestamp**: 2099-01-01T00:00:00Z")));
+    freshClone(dir);
+    const env = { ...process.env, AIDLC_SKIP_HUMAN_PRESENCE_GUARD: "0" };
+    const args = ["checkpoint", "--unit", "alpha", "--kind", "skeleton", "--session", "t341-recovery"];
+    expect(cli(dir, "bolt", [...args, "--action", "recover", "--user-input", "Approve"], env).code).not.toBe(0);
+    expect(humanActedSinceGate(dir)).toBe(false);
+    recover(dir);
+    // Historical wall clocks remain unchanged; the local protected response
+    // is the authority for this recovery, not a coarse presence timestamp.
+    expect(humanActedSinceGate(dir)).toBe(false);
+    expect(resolveConstructionCheckpoint(dir, "alpha", "skeleton").approved).toBe(true);
   }, 30_000);
 
   test("a tracked-files-only git clone asks once, restores routing, and carries no local trust to another clone", () => {
