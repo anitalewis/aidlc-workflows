@@ -5549,7 +5549,9 @@ function applyConstructionCheckpointShape(
     verification_command: checkpoint.verification_command,
     command_authorized: checkpoint.command_authorized,
     recovery_available: checkpoint.recovery_available,
+    recovery_declined: checkpoint.recovery_declined,
     recovery_prompt: checkpoint.recovery_prompt,
+    recovery_evidence: checkpoint.recovery_evidence,
   };
   if (directive.construction_policy) {
     directive.construction_policy.human_completion_required = checkpoint.human_required;

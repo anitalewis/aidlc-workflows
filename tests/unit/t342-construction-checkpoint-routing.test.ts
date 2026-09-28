@@ -7,10 +7,11 @@ import {
   NATIVE_STARTUP_TIMEOUT_MS,
   remainingOperationTimeoutMs,
 } from "../harness/test-budget.ts";
-import { afterEach, describe, expect, test, setDefaultTimeout } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test, setDefaultTimeout } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import {
   AIDLC_SRC, cleanupTestProject, createTestProject, resetAidlcEnv,
   runOrchestrateNext, seedAidlcMemory, seedBoltDag, seededRecordDir, seededStateFile,
@@ -27,6 +28,14 @@ import {
 setDefaultTimeout(NATIVE_FIXTURE_SETUP_TIMEOUT_MS);
 
 resetAidlcEnv();
+const priorInstallRoot = process.env.AIDLC_INSTALL_ROOT;
+const recoveryMachine = mkdtempSync(join(tmpdir(), "t342-recovery-machine-"));
+beforeAll(() => { process.env.AIDLC_INSTALL_ROOT = recoveryMachine; });
+afterAll(() => {
+  if (priorInstallRoot === undefined) delete process.env.AIDLC_INSTALL_ROOT;
+  else process.env.AIDLC_INSTALL_ROOT = priorInstallRoot;
+  rmSync(recoveryMachine, { recursive: true, force: true });
+});
 const projects: string[] = [];
 afterEach(() => {
   while (projects.length) cleanupTestProject(projects.pop());
@@ -283,6 +292,31 @@ describe("t342 Construction checkpoint routing", () => {
     expect(following.construction_checkpoint).toBeUndefined();
     expect(following.stage).toBe("functional-design");
     expect(following.unit).toBe("beta");
+  }, NATIVE_FIXTURE_SETUP_TIMEOUT_MS);
+
+  test("declined clone recovery survives interruption and requires execution preflight before verification", () => {
+    const p = fixture({ stance: "on", iteration: "stage-major" });
+    cover(p, "alpha");
+    approve(p, "alpha", "skeleton");
+    rmSync(join(seededRecordDir(p), ".aidlc-construction-checkpoints"), { recursive: true, force: true });
+    const session = "t342-decline";
+    askConstructionCheckpointRecovery(p, "alpha", "skeleton", session);
+    policyHuman(p, "Request Changes", session);
+    recoverConstructionCheckpoint(p, "alpha", "skeleton", "Request Changes", session);
+    policyHuman(p, "Continue", "resumed-session");
+    for (let resume = 0; resume < 2; resume++) {
+      expect(next(p).construction_checkpoint).toMatchObject({
+        unit: "alpha", verified: false, approved: false, recovery_available: false, recovery_declined: true,
+      });
+    }
+    const preflight = spawnSync(process.execPath, [
+      join(AIDLC_SRC, "tools/aidlc-testing-posture.ts"), "verify", "--unit", "alpha", "--project-dir", p,
+    ], {
+      encoding: "utf-8", timeout: remainingOperationTimeoutMs(NATIVE_STARTUP_TIMEOUT_MS),
+      env: { ...process.env, AIDLC_SKIP_PLAN_APPROVAL_GUARD: "0" },
+    });
+    expect(preflight.status, `${preflight.stdout}${preflight.stderr}`).toBe(2);
+    expect(JSON.parse(preflight.stdout).execution_allowed).toBe(false);
   }, NATIVE_FIXTURE_SETUP_TIMEOUT_MS);
 
   test("reused artifacts get lifecycle receipts before the Unit checkpoint", () => {

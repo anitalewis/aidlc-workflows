@@ -226,7 +226,14 @@ export interface RunStageDirective {
     verification_command: string | null;
     command_authorized: boolean;
     recovery_available: boolean;
+    recovery_declined: boolean;
     recovery_prompt: string | null;
+    recovery_evidence: {
+      source: "untrusted-repository-history";
+      command: string;
+      command_sha256: string;
+      verification_id: string;
+    } | null;
   };
   swarm_checkpoint?: {
     batch: number;
