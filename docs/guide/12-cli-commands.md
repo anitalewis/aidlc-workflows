@@ -1711,6 +1711,8 @@ questions or unsigned records cannot supply consent. A missing or replaced key
 requires a fresh question; unsigned records from earlier PR builds are ignored.
 If the key cannot be created or read, repair that local path or use local
 verification after the execution preflight.
+Normal uninstall preserves the key with the machine settings; `uninstall
+--purge` removes it, requiring fresh consent after reinstall.
 A fresh clone must make its own decision.
 
 Verification runs the recorded, human-authorized `Construction Verification
