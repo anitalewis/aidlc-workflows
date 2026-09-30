@@ -11643,9 +11643,9 @@ export function nextOpenDecision(
 // The open DECISION_RECORDED block for `stage` (null when none is open), in
 // chronological audit order, after the latest main-workflow `afterEvent` for
 // the stage when one is named (null when that boundary is absent). With a
-// `unit`, another Unit's questions and answers are skipped, so one Unit's
-// answer never closes a question asked for this Unit; a question asked for the
-// whole stage still counts.
+// `unit`, another Unit's questions and answers are skipped, and this Unit's are
+// paired apart from the whole stage's, so no answer closes a question from the
+// other scope; a question asked for the whole stage still counts.
 export function openDecisionBlock(
   projectDir: string,
   stage: string,
@@ -11688,13 +11688,19 @@ export function openDecisionBlock(
     if (boundary === -1) return null;
     start = boundary + 1;
   }
+  // Without a Unit, one slot for the stage. With one, the whole stage's
+  // questions and this Unit's are paired separately, so neither's answer
+  // closes the other's question; either left open is returned.
   let open: string | null = null;
+  let unitOpen: string | null = null;
   for (const event of events.slice(start)) {
     if (event.stage !== stage) continue;
-    if (unit !== undefined && event.unit !== null && event.unit !== "stage-level" && event.unit !== unit) continue;
-    open = nextOpenDecision(open, event.event, event.block);
+    const scoped = unit !== undefined && event.unit !== null && event.unit !== "stage-level";
+    if (scoped && event.unit !== unit) continue;
+    if (scoped) unitOpen = nextOpenDecision(unitOpen, event.event, event.block);
+    else open = nextOpenDecision(open, event.event, event.block);
   }
-  return open;
+  return unitOpen ?? open;
 }
 
 export function hasPendingDecision(

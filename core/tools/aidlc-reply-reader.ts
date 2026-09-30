@@ -145,8 +145,6 @@ const REPLY_APPROVAL_PHRASES: [RegExp, string][] = [
   [/\b(?:approval granted|you have my approval|consider it approved|it'?s approved|this is approved)\b/g, " approved "],
   [/\bas long as\b/g, " provided "],
   [/\b(?:looks?|seems?) off\b/g, " wrong "],
-  // "Set MODE to fast" starts by asking for a change; "all set" does not.
-  [/(^ |[.!;] )set (?!to go\b)(?=\S)/g, "$1change "],
   // "go" and "do it" say yes only as the whole reply or with "let's" or
   // "just": "I have to go" is leaving, not approving.
   [/^ (?:let'?s |just )?(?:do it|go(?: go)*) $/, " yes "],

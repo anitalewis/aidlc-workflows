@@ -138,8 +138,7 @@ describe("the shared reader", () => {
   test("a change request with code in it is a change request; code never approves", () => {
     for (const reply of [
       "Change the return type to Map<string, number>", "Use `a | b` instead of the if chain",
-      "Rename the flag to --mode=fast", "Return {ok: true} instead of throwing", "Set MODE=fast",
-      "Set MODE to fast", "Looks good. Set the timeout to 30s",
+      "Rename the flag to --mode=fast", "Return {ok: true} instead of throwing", "Change MODE=fast",
     ]) {
       const read = readApprovalGateReply(reply, { bound: true });
       expect(`${reply} -> ${read.choice}`).toBe(`${reply} -> Request Changes`);
@@ -150,8 +149,9 @@ describe("the shared reader", () => {
       expect(`${reply} -> ${gate(reply)}`).toBe(`${reply} -> unclear`);
     }
     expect(readSummaryConfirmationReply("yes <3").reading).toBe("unclear");
-    // "all set" is not a change request.
+    // Readiness is never read as a change request.
     expect(gate("looks good, all set")).toBe("Approve");
+    expect(gate("Set and ready to go")).not.toBe("Request Changes");
   });
 
   test("Accept as-is is a choice only once the gate offers it", () => {
@@ -337,6 +337,19 @@ describe("the stage gate reads the person's words", () => {
     decision(null, "Rename the shared module?");
     expect(stageGateReplyBound(proj, slug, "alpha")).toBe(false);
     expect(stageGateReplyBound(proj, slug)).toBe(false);
+    // The Unit's own question and answer after it leave the stage's open...
+    decision("alpha", "Keep alpha's cache?");
+    answer("alpha");
+    expect(stageGateReplyBound(proj, slug, "alpha")).toBe(false);
+    answer(null);
+    expect(stageGateReplyBound(proj, slug, "alpha")).toBe(true);
+    // ...and the stage's question and answer after the Unit's leave the Unit's open.
+    decision("alpha", "Rename alpha's table?");
+    decision(null, "Bump the shared version?");
+    answer(null);
+    expect(stageGateReplyBound(proj, slug, "alpha")).toBe(false);
+    answer("alpha");
+    expect(stageGateReplyBound(proj, slug, "alpha")).toBe(true);
   });
 });
 
