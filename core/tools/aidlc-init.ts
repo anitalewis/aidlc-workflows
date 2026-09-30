@@ -3657,6 +3657,31 @@ function runtimeGenerated(
   ].includes(normalized);
 }
 
+const KIRO_AGENT_UPGRADE_RESTORED = "restored after Kiro CLI's agent upgrade rewrote it";
+
+// Kiro CLI 3.0's agent upgrade ("Switch to 3.0 and upgrade my configs", or a
+// --v3 launch while its auto-upgrade is on) rewrites each agent-v1 JSON in place
+// and keeps the original beside it as `<name>.json.bak`. When that copy is
+// byte-identical to the file this install wrote, the change is Kiro's rather
+// than the person's, so config puts the agent back instead of refusing it as a
+// local edit. Returns the backup's path when that is the case.
+function kiroAgentUpgradeBackup(
+  descriptor: ProjectionDescriptor,
+  rel: string,
+  target: string,
+  currentHash: string | undefined,
+  priorHash: string | undefined,
+): string | null {
+  if (descriptor.distribution !== "kiro") return null;
+  const agents = `${descriptor.harnessDir}/agents/`;
+  if (!rel.startsWith(agents) || !rel.endsWith(".json") || rel.slice(agents.length).includes("/")) {
+    return null;
+  }
+  if (!priorHash || currentHash === undefined || currentHash === priorHash) return null;
+  const backup = `${target}.bak`;
+  return regularFile(backup) && sha256File(backup) === priorHash ? backup : null;
+}
+
 type StageContribRecord = {
   produces?: string[];
   sensors?: string[];
@@ -6562,6 +6587,25 @@ function planManagedFiles(
           : hash;
         if (nextHash !== undefined) nextHashes[rel] = nextHash;
       }
+      // Only a release source can put the agent back: a project that is its
+      // own source would copy Kiro's rewrite onto itself and lose the backup.
+      const kiroBackup = targetRegular && !retainBaseline
+        ? kiroAgentUpgradeBackup(descriptor, rel, target, currentHash, priorHash)
+        : null;
+      if (kiroBackup) {
+        operations.push({
+          kind: "copy",
+          path: rel,
+          source,
+          sourceHash: hash,
+          expected: expected(target),
+          mode: statSync(source).mode & 0o777,
+        });
+        operations.push({ kind: "remove", path: `${rel}.bak`, expected: expected(kiroBackup) });
+        actions.push({ path: rel, action: "update", detail: KIRO_AGENT_UPGRADE_RESTORED });
+        actions.push({ path: `${rel}.bak`, action: "remove", detail: KIRO_AGENT_UPGRADE_RESTORED });
+        continue;
+      }
       if (runtimeGenerated(rel, descriptor.harnessDir, regenerated)) {
         if (targetRegular && currentHash === hash) {
           actions.push({ path: rel, action: "preserve", detail: "runtime-generated" });
@@ -8168,6 +8212,16 @@ export async function main(
       prepared.regenerated,
       retainBaseline,
     );
+    const kiroRestored = actions.filter((item) =>
+      item.action === "update" && item.detail === KIRO_AGENT_UPGRADE_RESTORED
+    ).length;
+    if (kiroRestored > 0) {
+      prepared.notes.push(
+        `Kiro CLI's agent upgrade had rewritten ${kiroRestored} AI-DLC agent file${kiroRestored === 1 ? "" : "s"}. ` +
+          "They are restored and Kiro's .json.bak copies removed; .kiro/settings/cli.json keeps this project on " +
+          "Kiro CLI's v2 engine so the upgrade does not rewrite them again.",
+      );
+    }
     if (!selected.projectProjection) {
       planRootIntegrations(
         projectDir,

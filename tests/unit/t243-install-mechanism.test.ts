@@ -2889,6 +2889,62 @@ describe("t243 project initialization", () => {
     }
   }, NATIVE_FIXTURE_SETUP_TIMEOUT_MS);
 
+  test("config puts back Kiro CLI agents its agent upgrade rewrote, and still refuses a person's edits (#1532)", () => {
+    const project = temp("aidlc-t243-kiro-upgrade-");
+    mkdirSync(join(project, ".git"));
+    const configure = () => run(INIT, [
+      "config",
+      "--project-dir",
+      project,
+      "--from",
+      KIRO_RELEASES[0],
+      "--harness",
+      "kiro",
+      "--mcp",
+      "none",
+    ], project);
+    const installed = configure();
+    expect(installed.status, installed.stdout + installed.stderr).toBe(0);
+    const agents = join(project, ".kiro", "agents");
+    const shipped = (name: string): string =>
+      readFileSync(join(KIRO_RELEASES[0], ".kiro", "agents", name), "utf-8");
+    // Kiro's upgrade keeps each original as <name>.json.bak and rewrites the
+    // agent in place into its universal format.
+    const kiroUpgrade = (name: string) => {
+      const path = join(agents, name);
+      const original = readFileSync(path, "utf-8");
+      writeFileSync(`${path}.bak`, original);
+      writeFileSync(path, `${JSON.stringify({ ...JSON.parse(original), tools: ["read", "shell", "write"], hooks: [] }, null, 2)}\n`);
+    };
+    kiroUpgrade("aidlc.json");
+    kiroUpgrade("aidlc-developer-agent.json");
+
+    const restored = configure();
+    expect(restored.status, restored.stdout + restored.stderr).toBe(0);
+    expect(restored.stdout).toContain("Kiro CLI's agent upgrade had rewritten 2 AI-DLC agent files");
+    for (const name of ["aidlc.json", "aidlc-developer-agent.json"]) {
+      expect(readFileSync(join(agents, name), "utf-8"), name).toBe(shipped(name));
+      expect(existsSync(join(agents, `${name}.bak`)), `${name}.bak`).toBe(false);
+    }
+
+    // The person's own edit, with no Kiro backup, is still theirs.
+    const quality = join(agents, "aidlc-quality-agent.json");
+    const edited = `${JSON.stringify({ ...JSON.parse(shipped("aidlc-quality-agent.json")), description: "our own" }, null, 2)}\n`;
+    writeFileSync(quality, edited);
+    const refusedEdit = configure();
+    expect(refusedEdit.status).toBe(4);
+    expect(refusedEdit.stdout).toContain(".kiro/agents/aidlc-quality-agent.json (locally modified or unowned)");
+    expect(readFileSync(quality, "utf-8")).toBe(edited);
+
+    // An upgrade over that edit leaves a backup of the person's edit, not of
+    // AI-DLC's file, so config still refuses and keeps the backup.
+    kiroUpgrade("aidlc-quality-agent.json");
+    const refusedUpgradedEdit = configure();
+    expect(refusedUpgradedEdit.status).toBe(4);
+    expect(refusedUpgradedEdit.stdout).toContain(".kiro/agents/aidlc-quality-agent.json (locally modified or unowned)");
+    expect(readFileSync(`${quality}.bak`, "utf-8")).toBe(edited);
+  });
+
   test("init treats dangling managed symlinks as conflicts and cleans failed refresh staging", () => {
     const project = temp("aidlc-t240-init-symlink-");
     mkdirSync(join(project, ".git"));
