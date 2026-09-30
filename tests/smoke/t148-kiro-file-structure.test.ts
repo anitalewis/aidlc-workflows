@@ -276,6 +276,17 @@ describe("t148 dist/kiro file structure", () => {
     });
   });
 
+  test("Kiro CLI settings pin the v2 engine and turn Kiro's agent upgrade off", () => {
+    // Kiro CLI 3.0 offers to switch engines and upgrade agent configs, and the
+    // upgrade rewrites these agent-v1 JSON files into a form whose delegates
+    // lose their file and shell tools. The pin hides that offer in the project
+    // and stops a --v3 launch from rewriting the agents (#1532).
+    const settings = readJson(join(K, "settings", "cli.json"));
+    expect(settings["chat.agentEngine"]).toBe("v2");
+    expect(settings["chat.enableAutoAgentUpgrade"]).toBe(false);
+    expect(settings["chat.defaultAgent"]).toBe("aidlc");
+  });
+
   test("Kiro agent Markdown omits the Claude-only disallowedTools key", () => {
     for (const harness of ["kiro", "kiro-ide"] as const) {
       const agentsDir = join(REPO_ROOT, "dist", harness, ".kiro", "agents");
@@ -481,6 +492,32 @@ describe("t148 dist/kiro file structure", () => {
       expect(cli).toContain(
         "ok    settings/cli.json present (workspace default-agent activation)",
       );
+      const cliPin = 'settings/cli.json pins "chat.agentEngine": "v2" and "chat.enableAutoAgentUpgrade": false';
+      expect(cli).toContain(`ok    ${cliPin}`);
+      expect(cli).not.toContain('pins "chat.agentEngine": "v3"');
+      // Kiro CLI 3.0's upgrade rewrites these agents when either value is
+      // missing or changed, so each must fail rather than report clean.
+      const shipped = readJson(join(K, "settings", "cli.json"));
+      for (const [label, content] of [
+        ["missing", null],
+        ["malformed", "{\n"],
+        ["v3 engine", `${JSON.stringify({ ...shipped, "chat.agentEngine": "v3" }, null, 2)}\n`],
+        ["upgrade on", `${JSON.stringify({ ...shipped, "chat.enableAutoAgentUpgrade": true }, null, 2)}\n`],
+        ["upgrade unset", `${JSON.stringify({ ...shipped, "chat.enableAutoAgentUpgrade": undefined }, null, 2)}\n`],
+      ] as const) {
+        const project = mkdtempSync(join(tmpdir(), "t148-cli-v2-pin-"));
+        try {
+          cpSync(KIRO, project, { recursive: true });
+          const settings = join(project, ".kiro", "settings", "cli.json");
+          if (content === null) rmSync(settings);
+          else writeFileSync(settings, content);
+          const report = run(project);
+          expect(report, label).toContain(`fail  ${cliPin}`);
+          expect(report, label).toContain("in .kiro/settings/cli.json and keep its other keys");
+        } finally {
+          rmSync(project, { recursive: true, force: true });
+        }
+      }
     } finally {
       rmSync(installRoot, { recursive: true, force: true });
     }

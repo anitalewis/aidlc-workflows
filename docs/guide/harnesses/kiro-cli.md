@@ -59,8 +59,9 @@ kiro-cli chat
 
 The native projection allows `aidlc engine *` engine commands. It also ships
 `.kiro/settings/cli.json` with `chat.defaultAgent: "aidlc"`, so `/aidlc` is
-active without an agent flag. Run `/aidlc --doctor` in chat before the first
-workflow.
+active without an agent flag, and pins the project to Kiro CLI's v2 engine (see
+[Kiro CLI 3.0 and the v2 engine pin](#kiro-cli-30-and-the-v2-engine-pin)). Run
+`/aidlc --doctor` in chat before the first workflow.
 
 ### Versioned manual-copy alternative
 
@@ -126,6 +127,22 @@ this way. This file is read by the Kiro CLI only — the Kiro IDE ignores
 per session with `/effort <level>` in chat or `kiro-cli chat --effort
 <level>` (low|medium|high|xhigh|max) — a session flag and your user-level
 `~/.kiro/settings/cli.json` both take precedence over the workspace default.
+
+### Kiro CLI 3.0 and the v2 engine pin
+
+The shipped `.kiro/settings/cli.json` keeps the project on Kiro CLI's v2 engine,
+which AI-DLC's Kiro CLI agents are built for: `chat.agentEngine: "v2"` and
+`chat.enableAutoAgentUpgrade: false`. Kiro CLI 3.0 offers "Switch to 3.0 and
+upgrade my configs" at startup. In an AI-DLC project the pin means that prompt
+does not appear, and a `kiro-cli --v3` launch cannot rewrite the agents; Kiro
+falls back to its default agent instead. Without the pin, that upgrade rewrites
+every `.kiro/agents/*.json` (keeping `.json.bak` copies) into a form whose
+delegated agents can no longer write files or run commands. If that already
+happened, run `aidlc config` in the project: it recognises Kiro's rewrite,
+restores the AI-DLC agent files, and removes the `.bak` copies. Your other
+projects keep the engine you chose. To use Kiro CLI 3.0 with AI-DLC, set up the
+project with `aidlc config --harness kiro-ide` instead (see [Kiro IDE and Kiro
+CLI v3](kiro-ide.md)); an existing Kiro CLI project cannot switch in place yet.
 
 ## Refresh and version skew
 

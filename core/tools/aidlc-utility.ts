@@ -3903,6 +3903,24 @@ export async function collectDoctorReport(
         label: "settings/cli.json present (workspace default-agent activation)",
         fix: `${projectedFileRepair("kiro", ".kiro/settings/cli.json")} (or use \`kiro-cli chat --agent aidlc\`)`,
       });
+      // The JSON conductor row runs on Kiro CLI's v2 engine. Kiro CLI 3.0
+      // offers to switch engines and upgrade agent configs, and that upgrade
+      // rewrites these agents into a form whose delegates lose their file and
+      // shell tools, so the project pins v2 and turns the upgrade off.
+      let pinned = false;
+      try {
+        const settings = JSON.parse(readFileSync(cliSettingsPath, "utf-8")) as Record<string, unknown>;
+        pinned = settings["chat.agentEngine"] === "v2" && settings["chat.enableAutoAgentUpgrade"] === false;
+      } catch {
+        pinned = false;
+      }
+      results.push({
+        pass: pinned,
+        label: 'settings/cli.json pins "chat.agentEngine": "v2" and "chat.enableAutoAgentUpgrade": false ' +
+          "(these agents run on Kiro CLI's v2 engine; for Kiro CLI 3.0, set up a project with `aidlc config --harness kiro-ide`)",
+        fix: 'set "chat.agentEngine": "v2" and "chat.enableAutoAgentUpgrade": false in .kiro/settings/cli.json and keep its other keys; ' +
+          `otherwise ${projectedFileRepair("kiro", ".kiro/settings/cli.json")}, which replaces the whole file`,
+      });
     }
     if (existsSync(markdownAgentPath)) {
       // The Markdown conductor row pins Kiro CLI to the v3 engine and the aidlc

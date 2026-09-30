@@ -1,4 +1,6 @@
 {
+  "chat.agentEngine": "v2",
+  "chat.enableAutoAgentUpgrade": false,
   "chat.defaultAgent": "aidlc",
   "chat.modelDefaults": {
     "claude-opus-4.8": {
