@@ -95,6 +95,7 @@ If credentials aren't available, the workflow completes after Rules Validation a
 ### When Rework Triggers
 
 Rework can trigger during Deployment if:
+
 - The pipeline tool isn't reachable (wrong tool chosen during Construction)
 - The pipeline stack fails to deploy (IaC error)
 - The pipeline fails at any stage before the Human Approval gate (code bug, test failure, missing resource)
@@ -133,6 +134,7 @@ The AI reviews the pipeline's test results, assesses whether test coverage was a
 ### When Rework Triggers
 
 Rework can trigger during Post-Deployment Testing if:
+
 - Pipeline tests passed but coverage was inadequate (e.g. 8 endpoints but only 3 tested — the AI triggers rework to generate the missing tests)
 - Functional correctness tests fail (code bug discovered against the live environment)
 - Operational readiness checks fail (missing alarms, broken canaries, shallow health endpoints)
@@ -147,41 +149,41 @@ Each stage produces its own set of artifacts. The **summary document** for each 
 
 ### Operations Phase
 
-| Artifact | Location | What It Tells You |
-|----------|----------|-------------------|
+| Artifact                            | Location                                      | What It Tells You                                                                                                                                                            |
+| ----------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Operations summary** (start here) | `aidlc-docs/operations/operations-summary.md` | Provides a summary of results for all stages including Rules Validation outcome, Deployment status, Post-Deployment Testing result, and overall production readiness verdict |
 
 ### Rules Validation
 
-| Artifact | Location | What It Tells You |
-|----------|----------|-------------------|
-| **Compliance report** (start here) | `aidlc-docs/operations/rules-validation-report.md` | Overall result across all domains showing how many rules passed, how many gaps were found, and what triggered rework |
-| Completion summary | `aidlc-docs/operations/rules-validation-completion.md` | Final pass and gap counts per domain after all rework iterations complete |
-| Validation plan | `aidlc-docs/operations/validation-plan.md` | Which rule files were loaded and in what order |
-| Domain reports | `aidlc-docs/operations/{domain}/` | Per-rule compliance status with evidence citations, one file per domain |
-| Gap questions | `aidlc-docs/operations/rules-validation-gaps.md` | The gaps presented for your approval |
+| Artifact                           | Location                                               | What It Tells You                                                                                                    |
+| ---------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| **Compliance report** (start here) | `aidlc-docs/operations/rules-validation-report.md`     | Overall result across all domains showing how many rules passed, how many gaps were found, and what triggered rework |
+| Completion summary                 | `aidlc-docs/operations/rules-validation-completion.md` | Final pass and gap counts per domain after all rework iterations complete                                            |
+| Validation plan                    | `aidlc-docs/operations/validation-plan.md`             | Which rule files were loaded and in what order                                                                       |
+| Domain reports                     | `aidlc-docs/operations/{domain}/`                      | Per-rule compliance status with evidence citations, one file per domain                                              |
+| Gap questions                      | `aidlc-docs/operations/rules-validation-gaps.md`       | The gaps presented for your approval                                                                                 |
 
 ### Rework (if triggered)
 
-| Artifact | Location | What It Tells You |
-|----------|----------|-------------------|
+| Artifact                     | Location                                       | What It Tells You                                                                                     |
+| ---------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | **Rework plan** (start here) | `aidlc-docs/operations/run-{N}/rework-plan.md` | What was fixed during each iteration including the gap, the fix, and which Construction stages re-ran |
 
 ### Deployment
 
-| Artifact | Location | What It Tells You |
-|----------|----------|-------------------|
-| **Deployment outputs** (start here) | `aidlc-docs/operations/deployment-outputs.md` | Endpoints, ARNs, and resource identifiers showing what is live and where to find it |
-| Deployment inventory | `aidlc-docs/operations/deployment-inventory.md` | Categorised list of all deployable components (infrastructure, application, assets) |
-| Deployment log | `aidlc-docs/operations/deployment-deploy.md` | Commands run, outputs, and pipeline stage outcomes providing the full execution trace |
-| Deployment verification | `aidlc-docs/operations/deployment-verification.md` | Presence check confirming every component exists in the environment |
+| Artifact                            | Location                                           | What It Tells You                                                                     |
+| ----------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| **Deployment outputs** (start here) | `aidlc-docs/operations/deployment-outputs.md`      | Endpoints, ARNs, and resource identifiers showing what is live and where to find it   |
+| Deployment inventory                | `aidlc-docs/operations/deployment-inventory.md`    | Categorised list of all deployable components (infrastructure, application, assets)   |
+| Deployment log                      | `aidlc-docs/operations/deployment-deploy.md`       | Commands run, outputs, and pipeline stage outcomes providing the full execution trace |
+| Deployment verification             | `aidlc-docs/operations/deployment-verification.md` | Presence check confirming every component exists in the environment                   |
 
 ### Post-Deployment Testing
 
-| Artifact | Location | What It Tells You |
-|----------|----------|-------------------|
+| Artifact                     | Location                                               | What It Tells You                                                                                                               |
+| ---------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
 | **Test report** (start here) | `aidlc-docs/operations/post-deployment-test-report.md` | Pipeline results, functional correctness, and operational readiness providing the evidence for a production deployment decision |
-| Customer-staged tests | `aidlc-docs/operations/customer-staged-tests.md` | Tests requiring human execution with instructions (performance, chaos, penetration, UAT) |
+| Customer-staged tests        | `aidlc-docs/operations/customer-staged-tests.md`       | Tests requiring human execution with instructions (performance, chaos, penetration, UAT)                                        |
 
 ---
 

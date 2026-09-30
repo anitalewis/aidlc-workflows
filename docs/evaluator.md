@@ -26,13 +26,13 @@ The executor writes code into a Docker sandbox for security — shell commands c
 
 ### Software
 
-| Requirement | Version | How to check | Why |
-|-------------|---------|--------------|-----|
-| Python | ≥ 3.13 | `python3 --version` | Runs the evaluator framework |
-| uv | latest | `uv --version` | Manages Python dependencies and virtual environments |
-| Docker | running | `docker info` | Sandbox for executing generated code safely |
-| Git | any | `git --version` | Cloning the repo and managing test branches |
-| AWS CLI | v2 | `aws --version` | Resolving credentials for Bedrock API calls |
+| Requirement | Version | How to check        | Why                                                  |
+| ----------- | ------- | ------------------- | ---------------------------------------------------- |
+| Python      | ≥ 3.13  | `python3 --version` | Runs the evaluator framework                         |
+| uv          | latest  | `uv --version`      | Manages Python dependencies and virtual environments |
+| Docker      | running | `docker info`       | Sandbox for executing generated code safely          |
+| Git         | any     | `git --version`     | Cloning the repo and managing test branches          |
+| AWS CLI     | v2      | `aws --version`     | Resolving credentials for Bedrock API calls          |
 
 Install these using your organisation's approved method. For macOS:
 
@@ -75,7 +75,7 @@ The models you use must be available in your account. Enable access via the Bedr
 - **Executor**: `global.anthropic.claude-sonnet-4-6`
 - **Simulator/Scorer**: `global.anthropic.claude-opus-4-6-v1`
 
-These are configurable (see [Command-Line Parameters](#command-line-parameters)).
+These are configurable (see [Running](#running)).
 
 **Guidance on model choice:**
 
@@ -154,7 +154,7 @@ Remove when done: `git worktree remove ~/repos/aidlc-evaluator`
 
 Each run produces a timestamped folder in `eval-runs/runs/`:
 
-```
+```text
 eval-runs/runs/20260603T162246/
 ├── vision.md                    # Copy of the input vision
 ├── tech-env.md                  # Copy of the input tech-env

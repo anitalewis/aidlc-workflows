@@ -23,6 +23,7 @@ The baseline tells the AI "observability matters, here are the principles." The 
 ## Why does Operations re-assess rule applicability independently?
 
 This implements a "trust but verify" principle. Construction might have:
+
 - Missed rules that apply
 - Applied rules that don't apply
 - Made assumptions during implementation that changed what's relevant

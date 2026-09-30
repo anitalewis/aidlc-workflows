@@ -31,7 +31,7 @@ class TestRunnerConfigDefaults:
         config = RunnerConfig()
         assert config.swarm.max_handoffs == 200
         assert config.swarm.max_iterations == 200
-        assert config.swarm.execution_timeout == 14400.0
+        assert config.swarm.execution_timeout == 28800.0
         assert config.swarm.node_timeout == 3600.0
 
 
