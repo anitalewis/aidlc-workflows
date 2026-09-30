@@ -3658,13 +3658,22 @@ function runtimeGenerated(
 }
 
 const KIRO_AGENT_UPGRADE_RESTORED = "restored after Kiro CLI's agent upgrade rewrote it";
+const KIRO_AGENT_UPGRADE_KEPT = "keeps the version Kiro CLI's agent upgrade wrote";
 
 // Kiro CLI 3.0's agent upgrade ("Switch to 3.0 and upgrade my configs", or a
 // --v3 launch while its auto-upgrade is on) rewrites each agent-v1 JSON in place
 // and keeps the original beside it as `<name>.json.bak`. When that copy is
-// byte-identical to the file this install wrote, the change is Kiro's rather
-// than the person's, so config puts the agent back instead of refusing it as a
-// local edit. Returns the backup's path when that is the case.
+// byte-identical to the file this install wrote, the change began as Kiro's
+// rather than the person's, so config puts the agent back instead of refusing
+// it as a local edit, and keeps the version Kiro wrote (with anything the
+// person changed in it since) as the new `.bak`. Returns the backup's path when
+// that is the case.
+function kiroAgentFile(descriptor: ProjectionDescriptor, rel: string, extension: ".json" | ".json.bak"): boolean {
+  if (descriptor.distribution !== "kiro") return false;
+  const agents = `${descriptor.harnessDir}/agents/`;
+  return rel.startsWith(agents) && rel.endsWith(extension) && !rel.slice(agents.length).includes("/");
+}
+
 function kiroAgentUpgradeBackup(
   descriptor: ProjectionDescriptor,
   rel: string,
@@ -3672,11 +3681,7 @@ function kiroAgentUpgradeBackup(
   currentHash: string | undefined,
   priorHash: string | undefined,
 ): string | null {
-  if (descriptor.distribution !== "kiro") return null;
-  const agents = `${descriptor.harnessDir}/agents/`;
-  if (!rel.startsWith(agents) || !rel.endsWith(".json") || rel.slice(agents.length).includes("/")) {
-    return null;
-  }
+  if (!kiroAgentFile(descriptor, rel, ".json")) return null;
   if (!priorHash || currentHash === undefined || currentHash === priorHash) return null;
   const backup = `${target}.bak`;
   return regularFile(backup) && sha256File(backup) === priorHash ? backup : null;
@@ -4550,7 +4555,9 @@ function prepareRefreshSource(
       if (
         existsSync(staged) ||
         prior?.files[rel] ||
-        !generatedOverlayCandidate(rel, descriptor.harnessDir)
+        !generatedOverlayCandidate(rel, descriptor.harnessDir) ||
+        // Kiro CLI's agent upgrade leaves these; they stay the person's files.
+        kiroAgentFile(descriptor, rel, ".json.bak")
       ) continue;
       mkdirSync(dirname(staged), { recursive: true });
       cpSync(join(projectDir, rel), staged, { preserveTimestamps: true });
@@ -6592,7 +6599,18 @@ function planManagedFiles(
       const kiroBackup = targetRegular && !retainBaseline
         ? kiroAgentUpgradeBackup(descriptor, rel, target, currentHash, priorHash)
         : null;
-      if (kiroBackup) {
+      if (kiroBackup && currentHash !== undefined) {
+        // Kiro's backup holds exactly the bytes being restored, so it gives way
+        // to the version Kiro left in place, which may carry the person's own
+        // edits since the upgrade. Nothing is deleted.
+        operations.push({
+          kind: "copy",
+          path: `${rel}.bak`,
+          source: target,
+          sourceHash: currentHash,
+          expected: expected(kiroBackup),
+          mode: statSync(target).mode & 0o777,
+        });
         operations.push({
           kind: "copy",
           path: rel,
@@ -6601,9 +6619,8 @@ function planManagedFiles(
           expected: expected(target),
           mode: statSync(source).mode & 0o777,
         });
-        operations.push({ kind: "remove", path: `${rel}.bak`, expected: expected(kiroBackup) });
         actions.push({ path: rel, action: "update", detail: KIRO_AGENT_UPGRADE_RESTORED });
-        actions.push({ path: `${rel}.bak`, action: "remove", detail: KIRO_AGENT_UPGRADE_RESTORED });
+        actions.push({ path: `${rel}.bak`, action: "update", detail: KIRO_AGENT_UPGRADE_KEPT });
         continue;
       }
       if (runtimeGenerated(rel, descriptor.harnessDir, regenerated)) {
@@ -8216,10 +8233,28 @@ export async function main(
       item.action === "update" && item.detail === KIRO_AGENT_UPGRADE_RESTORED
     ).length;
     if (kiroRestored > 0) {
+      // Claim the project stays on v2 only when this source ships that pin: an
+      // older release restores the agents but leaves Kiro free to rewrite them.
+      let sourcePins = false;
+      try {
+        const settings = JSON.parse(
+          readFileSync(join(prepared.root, descriptor.harnessDir, "settings", "cli.json"), "utf-8"),
+        ) as Record<string, unknown>;
+        sourcePins = settings["chat.agentEngine"] === "v2" && settings["chat.enableAutoAgentUpgrade"] === false;
+      } catch {
+        sourcePins = false;
+      }
+      const agentFiles = `${kiroRestored} AI-DLC agent file${kiroRestored === 1 ? "" : "s"}`;
       prepared.notes.push(
-        `Kiro CLI's agent upgrade had rewritten ${kiroRestored} AI-DLC agent file${kiroRestored === 1 ? "" : "s"}. ` +
-          "They are restored and Kiro's .json.bak copies removed; .kiro/settings/cli.json keeps this project on " +
-          "Kiro CLI's v2 engine so the upgrade does not rewrite them again.",
+        argv.includes("--dry-run")
+          ? `Kiro CLI's agent upgrade has rewritten ${agentFiles}. Applying this refresh restores them and keeps ` +
+            "the versions Kiro wrote beside them as .json.bak" +
+            (sourcePins ? ", and keeps this project on Kiro CLI's v2 engine so the upgrade does not rewrite them again." : ".")
+          : `Kiro CLI's agent upgrade had rewritten ${agentFiles}. They are restored, and the versions Kiro wrote ` +
+            "are kept beside them as .json.bak. " +
+            (sourcePins
+              ? ".kiro/settings/cli.json keeps this project on Kiro CLI's v2 engine so the upgrade does not rewrite them again."
+              : "This release does not pin Kiro CLI's engine, so the upgrade can rewrite them again; refresh from a newer AI-DLC release."),
       );
     }
     if (!selected.projectProjection) {

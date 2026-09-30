@@ -307,6 +307,7 @@ import {
   legacyBoltName,
   legacyParkedRefPrefix,
   parkedRefPrefix,
+  readRegularFileNoFollowOrThrow,
   toPosix,
 } from "./aidlc-lib.ts";
 import { validateStageFrontmatter } from "./aidlc-stage-schema.ts";
@@ -3909,7 +3910,9 @@ export async function collectDoctorReport(
       // shell tools, so the project pins v2 and turns the upgrade off.
       let pinned = false;
       try {
-        const settings = JSON.parse(readFileSync(cliSettingsPath, "utf-8")) as Record<string, unknown>;
+        const settings = JSON.parse(
+          readRegularFileNoFollowOrThrow(cliSettingsPath, "settings/cli.json", 64 * 1024).toString("utf-8"),
+        ) as Record<string, unknown>;
         pinned = settings["chat.agentEngine"] === "v2" && settings["chat.enableAutoAgentUpgrade"] === false;
       } catch {
         pinned = false;

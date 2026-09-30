@@ -138,11 +138,14 @@ does not appear, and a `kiro-cli --v3` launch cannot rewrite the agents; Kiro
 falls back to its default agent instead. Without the pin, that upgrade rewrites
 every `.kiro/agents/*.json` (keeping `.json.bak` copies) into a form whose
 delegated agents can no longer write files or run commands. If that already
-happened, run `aidlc config` in the project: it recognises Kiro's rewrite,
-restores the AI-DLC agent files, and removes the `.bak` copies. Your other
-projects keep the engine you chose. To use Kiro CLI 3.0 with AI-DLC, set up the
-project with `aidlc config --harness kiro-ide` instead (see [Kiro IDE and Kiro
-CLI v3](kiro-ide.md)); an existing Kiro CLI project cannot switch in place yet.
+happened, run `aidlc config --harness kiro` in the project; with `--harness`,
+config refreshes the project files instead of opening the setup walk. It
+recognises Kiro's rewrite, restores the AI-DLC agent files, and keeps the
+versions Kiro wrote beside them as `.json.bak` in case you changed them. Your
+other projects keep the engine you chose. To use Kiro CLI 3.0 with AI-DLC, set
+up the project with `aidlc config --harness kiro-ide` instead (see [Kiro IDE and
+Kiro CLI v3](kiro-ide.md)); an existing Kiro CLI project cannot switch in place
+yet.
 
 ## Refresh and version skew
 

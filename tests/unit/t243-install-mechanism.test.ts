@@ -2889,10 +2889,10 @@ describe("t243 project initialization", () => {
     }
   }, NATIVE_FIXTURE_SETUP_TIMEOUT_MS);
 
-  test("config puts back Kiro CLI agents its agent upgrade rewrote, and still refuses a person's edits (#1532)", () => {
+  test("config puts back Kiro CLI agents its agent upgrade rewrote, keeps Kiro's versions, and still refuses a person's edits (#1532)", () => {
     const project = temp("aidlc-t243-kiro-upgrade-");
     mkdirSync(join(project, ".git"));
-    const configure = () => run(INIT, [
+    const configure = (...extra: string[]) => run(INIT, [
       "config",
       "--project-dir",
       project,
@@ -2902,6 +2902,7 @@ describe("t243 project initialization", () => {
       "kiro",
       "--mcp",
       "none",
+      ...extra,
     ], project);
     const installed = configure();
     expect(installed.status, installed.stdout + installed.stderr).toBe(0);
@@ -2910,22 +2911,46 @@ describe("t243 project initialization", () => {
       readFileSync(join(KIRO_RELEASES[0], ".kiro", "agents", name), "utf-8");
     // Kiro's upgrade keeps each original as <name>.json.bak and rewrites the
     // agent in place into its universal format.
-    const kiroUpgrade = (name: string) => {
+    const kiroUpgrade = (name: string): string => {
       const path = join(agents, name);
       const original = readFileSync(path, "utf-8");
+      const rewritten = `${JSON.stringify({ ...JSON.parse(original), tools: ["read", "shell", "write"], hooks: [] }, null, 2)}\n`;
       writeFileSync(`${path}.bak`, original);
-      writeFileSync(path, `${JSON.stringify({ ...JSON.parse(original), tools: ["read", "shell", "write"], hooks: [] }, null, 2)}\n`);
+      writeFileSync(path, rewritten);
+      return rewritten;
     };
-    kiroUpgrade("aidlc.json");
+    const conductor = kiroUpgrade("aidlc.json");
     kiroUpgrade("aidlc-developer-agent.json");
+    // The person then edits one rewritten agent before running config.
+    const developer = join(agents, "aidlc-developer-agent.json");
+    const editedAfterUpgrade = `${JSON.stringify({ ...JSON.parse(readFileSync(developer, "utf-8")), description: "tuned after the upgrade" }, null, 2)}\n`;
+    writeFileSync(developer, editedAfterUpgrade);
+
+    const preview = configure("--dry-run");
+    expect(preview.status, preview.stdout + preview.stderr).toBe(0);
+    expect(preview.stdout).toContain("Kiro CLI's agent upgrade has rewritten 2 AI-DLC agent files. Applying this refresh restores them");
+    expect(readFileSync(join(agents, "aidlc.json"), "utf-8")).toBe(conductor);
 
     const restored = configure();
     expect(restored.status, restored.stdout + restored.stderr).toBe(0);
-    expect(restored.stdout).toContain("Kiro CLI's agent upgrade had rewritten 2 AI-DLC agent files");
+    expect(restored.stdout).toContain("Kiro CLI's agent upgrade had rewritten 2 AI-DLC agent files. They are restored");
+    expect(restored.stdout).toContain("keeps this project on Kiro CLI's v2 engine");
     for (const name of ["aidlc.json", "aidlc-developer-agent.json"]) {
       expect(readFileSync(join(agents, name), "utf-8"), name).toBe(shipped(name));
-      expect(existsSync(join(agents, `${name}.bak`)), `${name}.bak`).toBe(false);
     }
+    // Nothing is lost: each backup now holds the version Kiro left in place,
+    // including the person's edit made after the upgrade.
+    expect(readFileSync(join(agents, "aidlc.json.bak"), "utf-8")).toBe(conductor);
+    expect(readFileSync(`${developer}.bak`, "utf-8")).toBe(editedAfterUpgrade);
+    // The backups stay the person's files: config never adopts them into its
+    // baseline, so a later refresh neither retires nor conflicts on them.
+    const baseline = JSON.parse(readFileSync(join(project, ".kiro", "tools", "data", "aidlc-manifest.json"), "utf-8")) as {
+      files: Record<string, string>;
+    };
+    expect(Object.keys(baseline.files).filter((rel) => rel.endsWith(".bak"))).toEqual([]);
+    const again = configure();
+    expect(again.status, again.stdout + again.stderr).toBe(0);
+    expect(again.stdout).not.toContain("Kiro CLI's agent upgrade");
 
     // The person's own edit, with no Kiro backup, is still theirs.
     const quality = join(agents, "aidlc-quality-agent.json");
