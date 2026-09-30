@@ -9498,9 +9498,10 @@ export interface StageGateReply {
 // A plain yes answers a held gate only when no other recorded question for
 // the stage is waiting for the same reply. The whole stage history is read,
 // so a recovered gate with no start or gate-open row on record is covered too;
-// a question left unanswered costs one confirmation, never a wrong answer.
-export function stageGateReplyBound(projectDir: string, stage: string): boolean {
-  return openDecisionBlock(projectDir, stage) === null;
+// a question left unanswered costs one confirmation, never a wrong answer. A
+// team Unit's gate reads that Unit's questions and the whole stage's.
+export function stageGateReplyBound(projectDir: string, stage: string, unit?: string): boolean {
+  return openDecisionBlock(projectDir, stage, undefined, unit) === null;
 }
 
 // A reply at a held stage gate, read in the person's own words. `bound`: no
@@ -11641,11 +11642,15 @@ export function nextOpenDecision(
 // stage attempt or after an approval gate from earlier interactions.
 // The open DECISION_RECORDED block for `stage` (null when none is open), in
 // chronological audit order, after the latest main-workflow `afterEvent` for
-// the stage when one is named (null when that boundary is absent).
+// the stage when one is named (null when that boundary is absent). With a
+// `unit`, another Unit's questions and answers are skipped, so one Unit's
+// answer never closes a question asked for this Unit; a question asked for the
+// whole stage still counts.
 export function openDecisionBlock(
   projectDir: string,
   stage: string,
   afterEvent?: string,
+  unit?: string,
 ): string | null {
   const audit = readAllAuditShards(projectDir);
   if (audit.length === 0) return null;
@@ -11659,6 +11664,7 @@ export function openDecisionBlock(
     .map((block, position) => ({
       event: auditBlockField(block, "Event") ?? "",
       stage: auditBlockField(block, "Stage"),
+      unit: auditBlockField(block, "Unit"),
       workflow: auditBlockField(block, "Workflow"),
       timestamp: auditBlockField(block, "Timestamp") ?? "",
       block,
@@ -11685,6 +11691,7 @@ export function openDecisionBlock(
   let open: string | null = null;
   for (const event of events.slice(start)) {
     if (event.stage !== stage) continue;
+    if (unit !== undefined && event.unit !== null && event.unit !== "stage-level" && event.unit !== unit) continue;
     open = nextOpenDecision(open, event.event, event.block);
   }
   return open;

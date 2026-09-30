@@ -42,6 +42,7 @@ import {
   readProtectedQuestion,
   readProtectedResponse,
   readStageGateReply,
+  stageGateReplyBound,
   stateDigest,
   stripRecommendedDecorator,
   writeActiveDirectiveMarker,
@@ -132,6 +133,25 @@ describe("the shared reader", () => {
     for (const reply of ["", "hmm", "maybe", "Cancelled", "3", "(Recommended)", "Approve (Recommended) extra"]) {
       expect(gate(reply)).toBe("unclear");
     }
+  });
+
+  test("a change request with code in it is a change request; code never approves", () => {
+    for (const reply of [
+      "Change the return type to Map<string, number>", "Use `a | b` instead of the if chain",
+      "Rename the flag to --mode=fast", "Return {ok: true} instead of throwing", "Set MODE=fast",
+      "Set MODE to fast", "Looks good. Set the timeout to 30s",
+    ]) {
+      const read = readApprovalGateReply(reply, { bound: true });
+      expect(`${reply} -> ${read.choice}`).toBe(`${reply} -> Request Changes`);
+      expect(read.feedback).toBe(reply);
+    }
+    expect(gate("what does `a | b` do?")).toBe("question");
+    for (const reply of ["yes <3", "Approve {}", "1 => approve", "approved <br>"]) {
+      expect(`${reply} -> ${gate(reply)}`).toBe(`${reply} -> unclear`);
+    }
+    expect(readSummaryConfirmationReply("yes <3").reading).toBe("unclear");
+    // "all set" is not a change request.
+    expect(gate("looks good, all set")).toBe("Approve");
   });
 
   test("Accept as-is is a choice only once the gate offers it", () => {
@@ -235,7 +255,8 @@ describe("the stage gate reads the person's words", () => {
   test("a change request reported as approval names the rejected report, which takes the words as feedback", () => {
     humanTurn(proj);
     const refused = JSON.parse(report(proj, ["--stage", slug, "--result", "approved", "--user-input", "rename the handler"]).out);
-    expect(refused.kind).toBe("error");
+    // A follow-up the conductor carries out, not a terminal error.
+    expect(refused.kind).toBe("print");
     expect(refused.message).toContain("asks for changes");
     expect(refused.message).toContain("--result rejected");
     expect(events(proj, "GATE_APPROVED")).toHaveLength(0);
@@ -260,6 +281,7 @@ describe("the stage gate reads the person's words", () => {
   test("a question records nothing and says to answer it and ask again", () => {
     humanTurn(proj);
     const asked = JSON.parse(report(proj, ["--stage", slug, "--result", "approved", "--user-input", "what does this cover?"]).out);
+    expect(asked.kind).toBe("print");
     expect(asked.message).toContain("asked a question");
     expect(asked.message).not.toContain("did not match an offered choice");
     expect(events(proj, "GATE_APPROVED")).toHaveLength(0);
@@ -285,8 +307,36 @@ describe("the stage gate reads the person's words", () => {
     expect(log(proj, ["decision", "--stage", slug, "--decision", "Add the README section too?", "--options", "Yes,No"]).rc).toBe(0);
     humanTurn(proj);
     const yes = JSON.parse(report(proj, ["--stage", slug, "--result", "approved", "--user-input", "yes"]).out);
+    expect(yes.kind).toBe("print");
     expect(yes.message).toContain("confirm in one reply");
     expect(events(proj, "GATE_APPROVED")).toHaveLength(0);
+  });
+
+  test("a change request with code in it is recorded, not refused", () => {
+    humanTurn(proj);
+    const reply = "Change the return type to Map<string, number>";
+    const rejected = report(proj, ["--stage", slug, "--result", "rejected", "--user-input", reply]);
+    expect(rejected.out, rejected.out).not.toContain('"kind":"error"');
+    expect(auditBlockField(events(proj, "GATE_REJECTED")[0].block, "Feedback")).toBe(reply);
+  });
+
+  test("a team Unit's gate is bound by its own questions and the whole stage's, not another Unit's", () => {
+    const decision = (unit: string | null, text: string) =>
+      appendAuditEntry("DECISION_RECORDED", { Stage: slug, ...(unit ? { Unit: unit } : {}), Decision: text, Options: "Yes,No" }, proj);
+    const answer = (unit: string | null) =>
+      appendAuditEntry("QUESTION_ANSWERED", { Stage: slug, ...(unit ? { Unit: unit } : {}), Details: "Yes" }, proj);
+    decision("alpha", "Add audit logging to alpha?");
+    decision("beta", "Split beta's tables?");
+    answer("beta");
+    // Beta's answer closes beta's question only; alpha's is still waiting.
+    expect(stageGateReplyBound(proj, slug, "alpha")).toBe(false);
+    expect(stageGateReplyBound(proj, slug, "beta")).toBe(true);
+    answer("alpha");
+    expect(stageGateReplyBound(proj, slug, "alpha")).toBe(true);
+    // A question for the whole stage waits for every Unit's gate.
+    decision(null, "Rename the shared module?");
+    expect(stageGateReplyBound(proj, slug, "alpha")).toBe(false);
+    expect(stageGateReplyBound(proj, slug)).toBe(false);
   });
 });
 
