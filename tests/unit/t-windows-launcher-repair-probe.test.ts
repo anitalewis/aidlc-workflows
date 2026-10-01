@@ -165,6 +165,7 @@ function traceRepair(value: unknown): void { appendRepairTrace(${JSON.stringify(
         expect(replaced.exitCode, replaced.stderr).toBe(0);
         expect(replaced.stdout).toBe(versionLine);
         expect(replaced.stderr).toBe("");
+        console.log(existsSync(tracePath) ? readFileSync(tracePath, "utf-8") : "No repair trace");
         expect(readFileSync(helperPath, "utf-8"), existsSync(tracePath) ? readFileSync(tracePath, "utf-8") : "No repair trace").toBe(current);
         expect(existsSync(lock)).toBe(false);
 

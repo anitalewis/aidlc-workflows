@@ -178,6 +178,16 @@ jobs:
           }
           Add-Content -LiteralPath $env:GITHUB_ENV -Value "AIDLC_CODEX_RUNNER_PROBE=$runner"
           Add-Content -LiteralPath $env:GITHUB_ENV -Value 'AIDLC_CODEX_RUNNER_PROBE_ONLY=0'
+      - name: Reproduce preview launcher check directly in PowerShell
+        if: runner.os == 'Windows' && inputs.diagnostic_filter == '^t-windows-launcher-repair-probe$'
+        shell: pwsh
+        run: |
+          $env:AIDLC_BUILD_VERSION = '2.10.1-preview.20261001.1'
+          bun scripts/package.ts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Remove-Item Env:AIDLC_BUILD_VERSION
+          bun test tests/unit/t-windows-launcher-repair-probe.test.ts
+          exit $LASTEXITCODE
       - name: Run deterministic tier
         # Leave time to sanitize and upload partial evidence after a timeout.
         timeout-minutes: 270
