@@ -16452,8 +16452,8 @@ export function reviewRequestAcceptsChangedOutputs(
 // against its original binding, or completed with a verdict. Both require the
 // request's artifact and source identities to still describe the current bytes;
 // the verdict itself arrives as a review record, so nothing else is needed.
-// Under relaxed or off a verdict also stays recordable when only the output
-// documents changed; a retry still cannot rebaseline them.
+// Under relaxed or off a main-workflow verdict also stays recordable when only
+// the output documents changed; a retry still cannot rebaseline them.
 export function pendingReviewRequestStatus(
   projectDir: string,
   stage: ReviewFingerprintStage,
@@ -16562,6 +16562,7 @@ export function pendingReviewRequestStatus(
       modernVerdictBinding &&
       (requestCurrent ||
         (sourceCurrent &&
+          options.single !== true &&
           reviewRequestAcceptsChangedOutputs(binding) &&
           changedOutputsAccepted())),
   };

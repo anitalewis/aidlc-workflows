@@ -77,6 +77,7 @@ import {
   reviewRecordRelativePath,
   resolveStage,
   serializeReviewRecord,
+  setGuardPolicyLine,
   toPosix,
 } from "../../dist/claude/.claude/tools/aidlc-lib.ts";
 import { readReviewArtifactContexts } from "../../dist/claude/.claude/tools/aidlc-review-brief.ts";
@@ -1545,6 +1546,61 @@ describe("t271 review iteration ceiling", () => {
     expect(retry.stderr).toContain("cannot rebaseline changed content");
     expect(auditBlocks(proj, "REVIEW_REQUESTED")).toHaveLength(1);
     expect(auditBlocks(proj, "REVIEW_COMPLETED")).toHaveLength(0);
+  });
+
+  test("relaxed: a NOT-READY below the cap with outputs edited while the reviewer ran saves silently, and the next pass covers the edit", () => {
+    const proj = seedProject("feature");
+    const statePath = seededStateFile(proj);
+    writeFileSync(
+      statePath,
+      setGuardPolicyLine(readFileSync(statePath, "utf-8"), "relaxed (set by you)"),
+    );
+    const dagDir = join(seededRecordDir(proj), "inception", "units-generation");
+    mkdirSync(dagDir, { recursive: true });
+    writeFileSync(
+      join(dagDir, "unit-of-work-dependency.md"),
+      "```yaml\nunits:\n  - name: unit-alpha\n    depends_on: []\n```\n",
+      "utf-8",
+    );
+    const artifact = writeReviewedArtifact(proj, "functional-design", "reviewed spec\n");
+    const base = [
+      "--stage", "functional-design",
+      "--reviewer", "aidlc-architecture-reviewer-agent",
+      "--unit", "unit-alpha",
+    ];
+
+    expect(runReview(proj, [...base, "--iteration", "1"]).status).toBe(0);
+    writeFileSync(artifact, "edited while the reviewer ran\n", "utf-8");
+    appendAuditEntry("ARTIFACT_UPDATED", {
+      File: artifact,
+      Tool: "Edit",
+      Unit: "unit-alpha",
+      Context: "construction > unit-alpha > functional-design > functional-spec.md",
+    }, proj);
+
+    // functional-design allows two passes: this NOT-READY sends the work to
+    // another review, not to the gate, so nothing is accepted or said.
+    const saved = runReview(proj, [...base, "--iteration", "1", "--verdict", "NOT-READY"]);
+    expect(saved.status, saved.stderr).toBe(0);
+    expect(saved.stdout).not.toContain("change_notices");
+    expect(auditBlocks(proj, "CHANGE_ACCEPTED")).toHaveLength(0);
+    const first = auditBlocks(proj, "REVIEW_COMPLETED")[0];
+    expect(auditBlockField(first, "Artifact Fingerprint")).toBe(
+      auditBlockField(first, "Request Fingerprint"),
+    );
+
+    expect(runReview(proj, [...base, "--iteration", "2"]).status).toBe(0);
+    const closed = runReview(proj, [...base, "--iteration", "2", "--verdict", "READY"]);
+    expect(closed.status, closed.stderr).toBe(0);
+    expect(closed.stdout).not.toContain("change_notices");
+    expect(auditBlocks(proj, "CHANGE_ACCEPTED")).toHaveLength(0);
+    const receipts = freshReviewReceipts(
+      proj,
+      readFileSync(statePath, "utf-8"),
+      resolveStage("functional-design")!,
+    );
+    expect(receipts.unitVerdicts.get("unit-alpha")).toBe("READY");
+    expect(receipts.acceptedChanges).toEqual([]);
   });
 
   test("an incomplete review retries once, and the retry reopens the review slot", () => {

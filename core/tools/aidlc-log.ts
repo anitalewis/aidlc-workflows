@@ -140,6 +140,7 @@ import {
   summaryConfirmationContentHash,
   stateFilePath,
   teamUnitGateStatus,
+  terminalReviewVerdict,
   toPosix,
   unattendedHumanPresenceHint,
   unitSourceFingerprint,
@@ -2449,6 +2450,7 @@ function handleReview(args: string[]): void {
       state,
       node,
       attempt,
+      reviewClass,
       budget,
       receipts,
       autonomousCandidate,
@@ -3072,6 +3074,8 @@ function handleReview(args: string[]): void {
       const {
         node,
         attempt,
+        reviewClass,
+        budget,
         requireRequiredArtifacts,
         unitResolution,
         mergedBoltUnits,
@@ -3136,15 +3140,16 @@ function handleReview(args: string[]): void {
       // was dispatched on must be the bytes on disk now. A legacy request is
       // compared against the body before any embedded appendix, which is what
       // it fingerprinted. Under Guard Policy relaxed or off, outputs edited
-      // while the reviewer ran are carried to the gate as an edit after the
+      // while a main-workflow reviewer ran are treated as an edit after the
       // verdict is: the verdict is recorded for the bytes the reviewer was
-      // given, and the change is recorded once and told to the human in one
-      // line. Strict refuses.
+      // given. Strict refuses, and so does an isolated --single run, whose
+      // gate reads no accepted change.
       const outputsCurrent =
         reviewRequestArtifactsCurrent(requestBinding, snapshot) ||
         appendedAfterRequest;
       const acceptChangedOutputs =
         !outputsCurrent &&
+        fields.Workflow === undefined &&
         reviewRequestAcceptsChangedOutputs(requestBinding) &&
         governedChangeControl(pd, context.state, { intent, space }).value !== "strict";
       if (!outputsCurrent && !acceptChangedOutputs) {
@@ -3444,7 +3449,15 @@ function handleReview(args: string[]): void {
       fields["Review Record"] = slot.recordRelative;
       fields["Review Record Digest"] = reviewRecordDigest(serialized);
       recordPath = slot.recordRelative;
-      if (acceptChangedOutputs) {
+      // A verdict that closes the review carries the change to the gate: one
+      // CHANGE_ACCEPTED row and one line for the human, as the gate writes for
+      // an edit after the verdict. A NOT-READY below the cap does not; the next
+      // iteration reviews the bytes as they are now.
+      const closesReview =
+        attempt.recoveryIteration === iteration ||
+        (reviewClass !== null &&
+          terminalReviewVerdict(verdict, flags.iteration, reviewClass, budget ?? undefined) !== null);
+      if (acceptChangedOutputs && closesReview) {
         const changed = outputsWrittenSinceRequest(
           pd,
           node,

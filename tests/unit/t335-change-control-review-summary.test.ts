@@ -583,13 +583,13 @@ const REVIEW_ONE = ["review", "--stage", STAGE, "--reviewer", REVIEWER, "--itera
 
 /** Request review iteration 1 and write the reviewer's review into the slot the
  *  request named, as a dispatched reviewer does. Returns the request's fingerprint. */
-function requestAndWriteReview(proj: string): string {
+function requestAndWriteReview(proj: string, request: string[] = REVIEW_ONE): string {
   const dir = stageDir(proj);
   for (const name of ["requirements.md", `${STAGE}-questions.md`]) {
     const path = join(dir, name);
     if (!existsSync(path)) writeFileSync(path, `# ${name}\n`);
   }
-  const requested = run(LOG_TOOL, REVIEW_ONE, proj);
+  const requested = run(LOG_TOOL, request, proj);
   expect(requested.status, requested.stderr).toBe(0);
   const { reviewFile } = JSON.parse(requested.stdout.trim().split("\n").at(-1) ?? "{}") as {
     reviewFile: string;
@@ -709,6 +709,18 @@ describe("t335 (7) an edit while the reviewer runs: relaxed and off save the rev
     expect(offered.strict).not.toContain("record-verdict");
     expect(offered.relaxed).toContain("record-verdict");
     expect(offered.off).toContain("record-verdict");
+  });
+
+  test("an isolated --single run keeps today's refusal under relaxed: no gate would carry the change", () => {
+    const proj = project("relaxed");
+    const single = [...REVIEW_ONE, "--single"];
+    requestAndWriteReview(proj, single);
+    editReviewedArtifact(proj);
+    const refused = run(LOG_TOOL, [...single, "--verdict", "READY"], proj);
+    expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toContain("its output documents changed after review iteration 1 started");
+    expect(reviewCompletedRows(proj)).toHaveLength(0);
+    expect(acceptedRows(proj)).toHaveLength(0);
   });
 
   test("relaxed still cannot rebaseline the changed bytes with a retry", () => {
