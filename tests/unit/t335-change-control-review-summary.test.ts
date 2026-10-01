@@ -1,5 +1,7 @@
 // covers: function:freshReviewReceipts, function:checkSummaryConfirmationEvidence,
 // function:recordAcceptedChanges, function:acceptedReviewChanges, function:renderReviewBrief,
+// function:reviewedContentChangeNotice, function:reviewRequestAcceptsChangedOutputs,
+// function:pendingReviewRequestStatus,
 // subcommand:aidlc-state:approve, subcommand:aidlc-state:gate-start,
 // subcommand:aidlc-log:review, subcommand:aidlc-orchestrate:report,
 // hook:aidlc-review-freeze, hook:aidlc-plan-approval-guard, audit:CHANGE_ACCEPTED
@@ -25,7 +27,7 @@ import {
 import { afterAll, describe, expect, test, setDefaultTimeout } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { appendAuditEntry } from "../../dist/claude/.claude/tools/aidlc-audit.ts";
 import {
   artifactFilename,
@@ -35,6 +37,7 @@ import {
   freshReviewReceipts,
   getField,
   GUARD_POLICY_FIELD,
+  guardRecoveryAskFromRefusalText,
   loadStageGraphAll,
   readAuditShardEvents,
   readAllAuditShards,
@@ -573,6 +576,152 @@ describe("t335 (1) review receipt: relaxed keeps the verdict and carries the cha
     expect(acceptedRows(proj)).toHaveLength(1);
     expect(reviewCompletedRows(proj)).toHaveLength(1);
     expect(auditBlockField(reviewCompletedRows(proj)[0].block, "Verdict")).toBe("READY");
+  });
+});
+
+const REVIEW_ONE = ["review", "--stage", STAGE, "--reviewer", REVIEWER, "--iteration", "1"];
+
+/** Request review iteration 1 and write the reviewer's review into the slot the
+ *  request named, as a dispatched reviewer does. Returns the request's fingerprint. */
+function requestAndWriteReview(proj: string): string {
+  const dir = stageDir(proj);
+  for (const name of ["requirements.md", `${STAGE}-questions.md`]) {
+    const path = join(dir, name);
+    if (!existsSync(path)) writeFileSync(path, `# ${name}\n`);
+  }
+  const requested = run(LOG_TOOL, REVIEW_ONE, proj);
+  expect(requested.status, requested.stderr).toBe(0);
+  const { reviewFile } = JSON.parse(requested.stdout.trim().split("\n").at(-1) ?? "{}") as {
+    reviewFile: string;
+  };
+  mkdirSync(dirname(join(proj, reviewFile)), { recursive: true });
+  writeFileSync(
+    join(proj, reviewFile),
+    `## Review\n\n**Verdict:** READY\n**Reviewer:** ${REVIEWER}\n**Iteration:** 1\n\n### Findings\n\nNo blocking findings.\n`,
+  );
+  const fingerprint = auditBlockField(
+    readAuditShardEvents(proj).filter((entry) => entry.event === "REVIEW_REQUESTED")[0].block,
+    "Artifact Fingerprint",
+  );
+  expect(fingerprint).toMatch(/^sha256:[0-9a-f]{64}$/);
+  return fingerprint as string;
+}
+
+/** The way-out operations a guard-recovery refusal offered. */
+function offeredRemedies(stderr: string): string[] {
+  const refusal = JSON.parse(stderr.trim().split("\n").at(-1) ?? "{}") as { error: string };
+  const ask = guardRecoveryAskFromRefusalText(refusal.error);
+  expect(ask).not.toBeNull();
+  return ask?.remedies.map((remedy) => remedy.op) ?? [];
+}
+
+describe("t335 (7) an edit while the reviewer runs: relaxed and off save the review for the version the reviewer read", () => {
+  test("strict refuses to save the review, and nothing is accepted", () => {
+    const proj = project("strict");
+    requestAndWriteReview(proj);
+    editReviewedArtifact(proj);
+    const refused = run(LOG_TOOL, [...REVIEW_ONE, "--verdict", "READY"], proj);
+    expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toContain(
+      "its output documents changed after review iteration 1 started. " +
+        "Restore the bytes the reviewer was dispatched on and re-run that exact iteration",
+    );
+    expect(reviewCompletedRows(proj)).toHaveLength(0);
+    expect(acceptedRows(proj)).toHaveLength(0);
+  });
+
+  for (const mode of ["relaxed", "off"] as const) {
+    test(`${mode}: the review is saved for the reviewed bytes, the change is recorded once, and the person hears one line`, () => {
+      const proj = project(mode);
+      const requestFingerprint = requestAndWriteReview(proj);
+      editReviewedArtifact(proj);
+      const notice =
+        `${artifactRelative(proj)} changed after it was reviewed. Continuing to the gate with the diff ${CONTINUING}`;
+
+      const saved = run(LOG_TOOL, [...REVIEW_ONE, "--verdict", "READY"], proj);
+      expect(saved.status, saved.stderr).toBe(0);
+      expect(printedNotices(saved.stdout)).toEqual([notice]);
+
+      // The receipt is the reviewer's verdict about the bytes the reviewer read.
+      const completed = reviewCompletedRows(proj);
+      expect(completed).toHaveLength(1);
+      expect(auditBlockField(completed[0].block, "Verdict")).toBe("READY");
+      expect(auditBlockField(completed[0].block, "Request Fingerprint")).toBe(requestFingerprint);
+      expect(auditBlockField(completed[0].block, "Artifact Fingerprint")).toBe(requestFingerprint);
+      const record = JSON.parse(
+        readFileSync(
+          join(seededRecordDir(proj), auditBlockField(completed[0].block, "Review Record") as string),
+          "utf-8",
+        ),
+      ) as { artifact_fingerprint: string; verdict: string };
+      expect(record.artifact_fingerprint).toBe(requestFingerprint);
+      expect(record.verdict).toBe("READY");
+
+      // One accepted change, naming the file edited while the reviewer ran.
+      const rows = acceptedRows(proj);
+      expect(rows).toHaveLength(1);
+      expect(auditBlockField(rows[0].block, "Stage")).toBe(STAGE);
+      expect(auditBlockField(rows[0].block, "Checkpoint")).toBe("review-receipt");
+      expect(auditBlockField(rows[0].block, "Changed")).toBe(artifactRelative(proj));
+      expect(auditBlockField(rows[0].block, "Recorded")).toBe(requestFingerprint);
+      expect(auditBlockField(rows[0].block, "Current")).toMatch(/^sha256:[0-9a-f]{64}$/);
+      expect(auditBlockField(rows[0].block, "Current")).not.toBe(requestFingerprint);
+      expect(auditBlockField(rows[0].block, "Details")).toBe(notice);
+
+      // The gate keeps the verdict, finds the change already recorded, and
+      // says nothing twice; the review summary shows what changed.
+      const receipts = freshReviewReceipts(proj, readFileSync(seededStateFile(proj), "utf-8"), stage());
+      expect(receipts.stageVerdict).toBe("READY");
+      expect(receipts.stageStale).toBe(false);
+      const gate = run(STATE_TOOL, ["gate-start", STAGE], proj);
+      expect(gate.status, gate.stderr).toBe(0);
+      expect(printedNotices(gate.stdout)).toEqual([]);
+      expect(acceptedRows(proj)).toHaveLength(1);
+      const brief = run(BRIEF_TOOL, ["review", "--stage", STAGE, "--why", "first"], proj);
+      expect(brief.status, brief.stderr).toBe(0);
+      expect(brief.stdout).toContain(`**Reviewed content differs:** ${notice}`);
+      expect(brief.stdout).toContain(`**Changed after review:** \`${artifactRelative(proj)}\``);
+      expect(readAllAuditShards(proj)).not.toContain("Recovery: stale-receipt");
+    });
+  }
+
+  test("the one-pass limit refuses identically under every value; relaxed and off also offer saving the review", () => {
+    const offered: Record<string, string[]> = {};
+    for (const mode of ["strict", "relaxed", "off"] as const) {
+      const proj = project(mode);
+      requestAndWriteReview(proj);
+      editReviewedArtifact(proj);
+      const over = run(
+        LOG_TOOL,
+        ["review", "--stage", STAGE, "--reviewer", REVIEWER, "--iteration", "2"],
+        proj,
+      );
+      expect(over.status, mode).not.toBe(0);
+      expect(over.stderr, mode).toContain(
+        "this stage allows 1 review pass. Do not ask the reviewer again; include the findings in the approval summary for the human.",
+      );
+      expect(
+        readAuditShardEvents(proj).filter((entry) => entry.event === "REVIEW_REQUESTED"),
+        mode,
+      ).toHaveLength(1);
+      offered[mode] = offeredRemedies(over.stderr);
+    }
+    expect(offered.strict).not.toContain("record-verdict");
+    expect(offered.relaxed).toContain("record-verdict");
+    expect(offered.off).toContain("record-verdict");
+  });
+
+  test("relaxed still cannot rebaseline the changed bytes with a retry", () => {
+    const proj = project("relaxed");
+    requestAndWriteReview(proj);
+    editReviewedArtifact(proj);
+    const retry = run(LOG_TOOL, [...REVIEW_ONE, "--retry-pending"], proj);
+    expect(retry.status).not.toBe(0);
+    expect(retry.stderr).toContain("cannot rebaseline changed content");
+    expect(
+      readAuditShardEvents(proj).filter((entry) => entry.event === "REVIEW_REQUESTED"),
+    ).toHaveLength(1);
+    expect(acceptedRows(proj)).toHaveLength(0);
   });
 });
 

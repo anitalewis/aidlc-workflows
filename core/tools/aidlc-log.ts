@@ -109,7 +109,12 @@ import {
   reviewDraftRelativePath,
   reviewRecordDigest,
   reviewRecordRelativePath,
+  reviewRequestAcceptsChangedOutputs,
   reviewRequestArtifactsCurrent,
+  reviewedArtifactUnit,
+  reviewedContentChangeNotice,
+  intentRepos,
+  resolveAuditProjectPath,
   renderReviewVerdictCommand,
   REVIEW_RECORD_MAX_BYTES,
   resolveBoltDag,
@@ -2237,6 +2242,40 @@ function derivedRecordFinding(
   };
 }
 
+// The reviewed outputs written after a review request, as the paths an
+// accepted change names: the ARTIFACT_* rows the write hooks recorded after
+// that request, for the reviewed scope. A write that left no row cannot be
+// named, so an empty list reads as paths unavailable.
+function outputsWrittenSinceRequest(
+  pd: string,
+  node: Parameters<typeof reviewedArtifactUnit>[0],
+  unit: string | undefined,
+  requestId: string | null,
+  intent: string,
+  space: string,
+): string[] | null {
+  if (requestId === null) return null;
+  const events = sortAttemptEvents(readAuditShardEvents(pd, intent, space));
+  const start = events.findIndex((event) =>
+    event.event === "REVIEW_REQUESTED" &&
+    auditBlockField(event.block, "Stage") === node.slug &&
+    auditBlockField(event.block, "Request Id") === requestId
+  );
+  if (start === -1) return null;
+  const repos = new Set(intentRepos(pd));
+  const paths: string[] = [];
+  for (const event of events.slice(start + 1)) {
+    if (event.event !== "ARTIFACT_CREATED" && event.event !== "ARTIFACT_UPDATED") continue;
+    const file = auditBlockField(event.block, "File");
+    if (!file) continue;
+    const target = reviewedArtifactUnit(node, file, repos);
+    if (target === undefined || (unit !== undefined && target !== null && target !== unit)) continue;
+    const path = toPosix(relative(pd, resolveAuditProjectPath(pd, file)));
+    if (!paths.includes(path)) paths.push(path);
+  }
+  return paths.length > 0 ? paths : null;
+}
+
 function handleReview(args: string[]): void {
   const { flags } = parseFlags(args);
   if (!flags.stage) error("Missing --stage <slug>");
@@ -2504,6 +2543,7 @@ function handleReview(args: string[]): void {
           boltDag: unitResolution ?? undefined,
           mergedBoltUnits,
           single: flags.single === "true",
+          stateContent: state,
         })
       : null;
     if (receipts?.changeControlRead || summaryEvidence.changeControlRead) {
@@ -3095,11 +3135,19 @@ function handleReview(args: string[]): void {
       // The reviewer writes a review, never the artifact: the bytes the reviewer
       // was dispatched on must be the bytes on disk now. A legacy request is
       // compared against the body before any embedded appendix, which is what
-      // it fingerprinted.
-      if (
-        !reviewRequestArtifactsCurrent(requestBinding, snapshot) &&
-        !appendedAfterRequest
-      ) {
+      // it fingerprinted. Under Guard Policy relaxed or off, outputs edited
+      // while the reviewer ran are carried to the gate as an edit after the
+      // verdict is: the verdict is recorded for the bytes the reviewer was
+      // given, and the change is recorded once and told to the human in one
+      // line. Strict refuses.
+      const outputsCurrent =
+        reviewRequestArtifactsCurrent(requestBinding, snapshot) ||
+        appendedAfterRequest;
+      const acceptChangedOutputs =
+        !outputsCurrent &&
+        reviewRequestAcceptsChangedOutputs(requestBinding) &&
+        governedChangeControl(pd, context.state, { intent, space }).value !== "strict";
+      if (!outputsCurrent && !acceptChangedOutputs) {
         refuseReview(
           `Cannot record the verdict for "${flags.stage}" because ` +
             `its output documents changed after review iteration ${iteration} started. ` +
@@ -3187,8 +3235,11 @@ function handleReview(args: string[]): void {
         }
       }
 
+      const reviewedFingerprint = acceptChangedOutputs
+        ? requestBinding.artifactFingerprint
+        : snapshot.fingerprint;
       fields["Request Fingerprint"] = requestBinding.artifactFingerprint;
-      fields["Artifact Fingerprint"] = snapshot.fingerprint;
+      fields["Artifact Fingerprint"] = reviewedFingerprint;
       if (requestBinding.requestId !== null) {
         fields["Request Id"] = requestBinding.requestId;
       }
@@ -3342,7 +3393,7 @@ function handleReview(args: string[]): void {
         verdict: verdict as ReviewVerdict,
         request_id: requestBinding.requestId,
         request_challenge: legacy?.challenge ?? null,
-        artifact_fingerprint: snapshot.fingerprint,
+        artifact_fingerprint: reviewedFingerprint,
         source_fingerprint: sourceFingerprint,
         unit_source_fingerprint: unitFingerprint,
         // Older readers read `findings` in today's New/Unresolved/Resolved
@@ -3393,6 +3444,25 @@ function handleReview(args: string[]): void {
       fields["Review Record"] = slot.recordRelative;
       fields["Review Record Digest"] = reviewRecordDigest(serialized);
       recordPath = slot.recordRelative;
+      if (acceptChangedOutputs) {
+        const changed = outputsWrittenSinceRequest(
+          pd,
+          node,
+          flags.unit,
+          requestBinding.requestId,
+          intent,
+          space,
+        );
+        verdictChangeNotices.push(...recordAcceptedChanges(pd, [{
+          checkpoint: "review-receipt",
+          stage: flags.stage,
+          unit: flags.unit ?? null,
+          changed,
+          recorded: requestBinding.artifactFingerprint,
+          current: snapshot.fingerprint,
+          notice: reviewedContentChangeNotice(node, changed),
+        }], { intent, space }));
+      }
       emitAudit(pd, "REVIEW_COMPLETED", fields, intent, space);
       // The draft was the reviewer's input; the record now holds it. The
       // chain was verified when the draft was read, so this cannot redirect.

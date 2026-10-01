@@ -16438,10 +16438,22 @@ export function reviewAppendedAfterRequest(
     : !binding.legacyAppendix.priorAppendix;
 }
 
+// A request whose changed output documents a relaxed or off Guard Policy can
+// accept at its verdict: a record-era request, with an id and no legacy
+// appendix binding. The verdict is then recorded for the bytes the reviewer
+// was given, and the change is accepted as one after the verdict would be.
+export function reviewRequestAcceptsChangedOutputs(
+  binding: ReviewRequestBinding,
+): boolean {
+  return binding.requestId !== null && binding.legacyAppendix === null;
+}
+
 // What can still be done with the oldest pending review request: retried once
 // against its original binding, or completed with a verdict. Both require the
 // request's artifact and source identities to still describe the current bytes;
 // the verdict itself arrives as a review record, so nothing else is needed.
+// Under relaxed or off a verdict also stays recordable when only the output
+// documents changed; a retry still cannot rebaseline them.
 export function pendingReviewRequestStatus(
   projectDir: string,
   stage: ReviewFingerprintStage,
@@ -16453,6 +16465,7 @@ export function pendingReviewRequestStatus(
     mergedBoltUnits?: ReadonlySet<string>;
     single?: boolean;
     sourceState?: WorkspaceSourceState | null;
+    stateContent?: string | null;
   } = {},
 ): PendingReviewRequestStatus | null {
   const iteration = [...attempt.pendingIterations].sort((a, b) => a - b)[0];
@@ -16482,9 +16495,10 @@ export function pendingReviewRequestStatus(
     };
   }
 
-  let requestCurrent =
+  const artifactsCurrent =
     reviewRequestArtifactsCurrent(binding, snapshot) ||
     reviewAppendedAfterRequest(binding, snapshot);
+  let sourceCurrent = true;
   let modernVerdictBinding = reviewRequestBindingIsModern(binding, stage);
 
   const sourceState = stage.workspace_requires
@@ -16499,7 +16513,7 @@ export function pendingReviewRequestStatus(
       binding.sourceFingerprint !== null &&
       !sameWorkspaceSource(binding.sourceFingerprint, currentSource)
     ) {
-      requestCurrent = false;
+      sourceCurrent = false;
     }
   }
 
@@ -16511,7 +16525,7 @@ export function pendingReviewRequestStatus(
   if (bindsUnitSource) {
     const manifest = readUnitSourceManifest(projectDir, stage.slug, unit);
     if (manifest.ok !== true) {
-      requestCurrent = false;
+      sourceCurrent = false;
       modernVerdictBinding = false;
     } else {
       const currentUnitSource =
@@ -16526,17 +16540,30 @@ export function pendingReviewRequestStatus(
         binding.unitSourceFingerprint !== null &&
         currentUnitSource !== binding.unitSourceFingerprint
       ) {
-        requestCurrent = false;
+        sourceCurrent = false;
       }
       if (binding.unitSourceFingerprint === null) modernVerdictBinding = false;
     }
   }
 
+  const requestCurrent = artifactsCurrent && sourceCurrent;
+  const changedOutputsAccepted = (): boolean => {
+    try {
+      return resolveGuardPolicy(projectDir, options.stateContent).value !== "strict";
+    } catch {
+      return false;
+    }
+  };
   return {
     iteration,
     requestCurrent,
     retryable: requestCurrent && !pending.retried,
-    verdictRecordable: requestCurrent && modernVerdictBinding,
+    verdictRecordable:
+      modernVerdictBinding &&
+      (requestCurrent ||
+        (sourceCurrent &&
+          reviewRequestAcceptsChangedOutputs(binding) &&
+          changedOutputsAccepted())),
   };
 }
 
@@ -17024,8 +17051,6 @@ export function freshReviewReceipts(
   // matches the current bytes, and fed the produces[] paths written after it.
   const acceptedArtifactChanges = new Map<string, AcceptedChange>();
   const acceptedChanges: AcceptedChange[] = [];
-  const relaxedReviewNotice = (artifact: string): string =>
-    `${artifact} changed after it was reviewed. Continuing to the gate with the diff (Guard Policy: relaxed or off).`;
   const resetUnitReviewState = (unit: string): void => {
     for (const [key, request] of pendingRequests) {
       if (request.unit === unit) pendingRequests.delete(key);
@@ -17674,11 +17699,7 @@ export function freshReviewReceipts(
       ...[...acceptedArtifactChanges.values()].map((change) => ({
         ...change,
         changed: change.changed !== null && change.changed.length > 0 ? change.changed : null,
-        notice: relaxedReviewNotice(
-          change.changed !== null && change.changed.length > 0
-            ? renderChangedPaths(change.changed)
-            : stage.review_artifact ?? `The ${stage.slug} output`,
-        ),
+        notice: reviewedContentChangeNotice(stage, change.changed),
       })),
       ...acceptedChanges,
     ],
@@ -26434,6 +26455,7 @@ export function guardAttemptState(
               ...(sharedSourceState !== undefined
                 ? { sourceState: sharedSourceState }
                 : {}),
+              stateContent,
             },
           );
   const unitVerdict =
@@ -34356,6 +34378,23 @@ export function renderChangedPaths(paths: readonly string[]): string {
   const shown = paths.slice(0, CHANGE_CONTROL_MAX_LISTED_PATHS);
   const more = paths.length - shown.length;
   return more > 0 ? `${shown.join(", ")} (and ${more} more)` : shown.join(", ");
+}
+
+/** The one line the human hears when reviewed content changed and relaxed or off carries it to the gate. */
+function relaxedReviewNotice(artifact: string): string {
+  return `${artifact} changed after it was reviewed. Continuing to the gate with the diff (Guard Policy: relaxed or off).`;
+}
+
+/** That line for a stage's reviewed outputs: the changed paths, else the review artifact. */
+export function reviewedContentChangeNotice(
+  stage: { slug: string; review_artifact?: string },
+  changed: readonly string[] | null,
+): string {
+  return relaxedReviewNotice(
+    changed !== null && changed.length > 0
+      ? renderChangedPaths(changed)
+      : stage.review_artifact ?? `The ${stage.slug} output`,
+  );
 }
 
 /** The audit fields a CHANGE_ACCEPTED row carries for one accepted change. */

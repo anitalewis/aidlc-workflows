@@ -20,9 +20,9 @@
     "render-surface": "tui"
   },
   "counts": {
-    "total": 1272,
+    "total": 1274,
     "enumeratedByClass": {
-      "function": 940,
+      "function": 942,
       "audit": 110,
       "scope": 11,
       "stage": 33,
@@ -31,7 +31,7 @@
       "render-surface": 7
     },
     "coveredByClass": {
-      "function": 576,
+      "function": 578,
       "audit": 70,
       "scope": 11,
       "stage": 11,
@@ -6685,6 +6685,10 @@
         {
           "file": "tests/unit/t115.test.ts",
           "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t335-change-control-review-summary.test.ts",
+          "mechanism": "cli"
         }
       ],
       "status": "covered"
@@ -8598,6 +8602,18 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:reviewedContentChangeNotice",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t335-change-control-review-summary.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:reviewedSourceEvidencePath",
       "minMechanism": "none",
       "coveredBy": [
@@ -8753,6 +8769,18 @@
       "coveredBy": [
         {
           "file": "tests/unit/t271-review-iteration-ceiling.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:reviewRequestAcceptsChangedOutputs",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t335-change-control-review-summary.test.ts",
           "mechanism": "cli"
         }
       ],
