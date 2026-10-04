@@ -234,8 +234,11 @@ that starts new work, is made by a command the agent or a script runs and reads
 `set by a command`. A change to work already under way records `CEREMONY_SET`
 either way; a flag on the command that starts new work is stored in the new
 state file without one. Turning summary
-confirmation or plan approval off for work already under way needs your own
-turn: run by the agent, it is refused with a message asking you to type it. On a Kiro IDE build that gives hooks no message text, typing it cannot work, so the refusal asks you to update Kiro IDE ([Kiro IDE guide](harnesses/kiro-ide.md#whats-different-on-kiro)). `/aidlc --status` shows the effective value and source.
+confirmation or plan approval off for work already under way needs you to ask
+for it: say so in the chat and the agent turns it off for you, recorded as set
+by you with your words, and tells you in one line how to turn it back on. The
+agent's command is refused only when nobody has asked for it since the last
+decision. On a Kiro IDE build that gives hooks no message text, turning one off for this piece of work cannot work, so the agent offers this project instead ([Kiro IDE guide](harnesses/kiro-ide.md#whats-different-on-kiro)). `/aidlc --status` shows the effective value and source.
 Changing scope updates scope-sourced settings while keeping your overrides;
 an absent or malformed field falls back to the scope instead of blocking the run.
 
@@ -288,17 +291,19 @@ at that Unit's approval gate, where **Request Changes** sends it back with your
 words.
 
 **Only you turn it off.** Say so in your own words ("skip plan approval for
-this work"), or type `/aidlc --plan-approval off` or
-`/aidlc config set plan-approval off`. The human-turn hook applies it to this
-piece of work and records a `CEREMONY_SET` row; a plan already waiting for
-your answer then builds. A question or remark that mentions plan approval
+this work", "let it build the plans without me"), and the agent turns it off for
+this piece of work and says so in one line with the way back; or type
+`/aidlc --plan-approval off` or `/aidlc config set plan-approval off`, which the
+human-turn hook applies when your message arrives. Either way it is recorded as
+set by you in a `CEREMONY_SET` row (with your words when the agent ran it), and a
+plan already waiting for your answer then builds. A question or remark that mentions plan approval
 changes nothing. Before the work exists, at the compose gate or the scope
 confirmation, your words answer that request: the piece of work created from it
 starts with plan approval off, set by you (the creation line says
 `no plan approval`). Said before you describe the work, they answer the next
 request you make. Work created from any other request keeps its scope's value,
-and typing `/aidlc --plan-approval on` first takes the words back. The agent never turns it off and never suggests it: the
-same command run by the agent is refused and asks you to do it yourself. Turning it
+and typing `/aidlc --plan-approval on` first takes the words back. The agent never turns it off on its own and never suggests it:
+its command is refused when nobody has asked for it since the last decision. Turning it
 on (`/aidlc --plan-approval on`) works from anywhere, the agent included, and
 applies from the next plan. `guard.plan-approval` is another name for the same
 switch: `/aidlc config set guard.plan-approval off` turns plan approval off and
@@ -382,7 +387,7 @@ Intent creation reads Guard Policy from the scope the plan runs on. The conducto
 
 1. **The scope file.** `guard_policy: strict | relaxed | off` in `scopes/aidlc-<name>.md` is the value every new intent on that scope starts with. Every shipped scope declares it; a scope file that declares none starts strict.
 2. **Memory.** A `## Guard Policy` section with one line, `Mode: strict`, in `aidlc/spaces/<space>/memory/org.md`, `team.md`, or `project.md` holds strict for everyone on the repo. It wins over the scope default and per-intent values, and it keeps [plan approval](#plan-approval) on. An explicit `--guard-policy relaxed`, `--guard-policy off`, `/aidlc config set guard.<fence> off`, or turning plan approval off is refused with a sentence naming the memory file, and none of the command's companion settings or scope change is applied. Turning a fence `on` remains allowed. `Mode: relaxed`, `Mode: off`, or an empty section changes nothing; any other value is a validation error naming the file and the three allowed values.
-3. **The intent.** When you type `/aidlc --guard-policy relaxed|off`, `/aidlc config set guard-policy relaxed|off`, or the confirmation words `guard policy relaxed|off`, the human-turn hook applies the switch at prompt time to the selected piece of work and records the audit row (`/aidlc --status` shows it as `Guard Policy: relaxed (set by you)`). A typed command that includes other intent settings validates every value first and applies all of them under the same lock; a malformed command or invalid companion changes nothing. The conductor runs `next` and relays the stand-aside line or the `AIDLC Guard Policy: ...` hook context on harnesses that inject it; it does not run the lowering setter itself. A message of `guard policy strict` or another plain-words request for strict runs `config-change --guard-policy <strict|relaxed|off>` with `strict` at once, prints its output verbatim, and stops. Other plain-words requests for relaxed or off get the exact command for you to type (`/aidlc --guard-policy relaxed` or `/aidlc --guard-policy off`, with `$aidlc` on Codex). If this Kiro IDE build delivers no prompt text, active work cannot be lowered: update Kiro IDE or start new work from a lower-default scope. Changing scope can raise a scope-owned policy automatically, but a lower scope default leaves the stricter value in place until you type the lowering switch. Naming a scope's own default at creation records the scope's value. A sole retired `Change Control: relaxed|off` field is normalized automatically without changing its value or writing a policy audit row.
+3. **The intent.** When you type `/aidlc --guard-policy relaxed|off`, `/aidlc config set guard-policy relaxed|off`, or the confirmation words `guard policy relaxed|off`, the human-turn hook applies the switch at prompt time to the selected piece of work and records the audit row (`/aidlc --status` shows it as `Guard Policy: relaxed (set by you)`). A typed command that includes other intent settings validates every value first and applies all of them under the same lock; a malformed command or invalid companion changes nothing. The conductor runs `next` and relays the stand-aside line or the `AIDLC Guard Policy: ...` hook context on harnesses that inject it. Asked in plain words ("relax the change checks", "turn the guards off"), the agent runs the setter for you at once: it is recorded as set by you with your words, and one line says how to put it back. `strict` raises the guards and always runs. If this Kiro IDE build delivers no prompt text, active work cannot be lowered: update Kiro IDE or start new work from a lower-default scope. Changing scope can raise a scope-owned policy automatically, but a lower scope default leaves the stricter value in place until you ask for the lower one. Naming a scope's own default at creation records the scope's value. A sole retired `Change Control: relaxed|off` field is normalized automatically without changing its value or writing a policy audit row.
 
 #### Where the value lives
 
@@ -420,15 +425,15 @@ A fence is a guard that refuses an action nothing asked for: no step the workflo
 /aidlc config set guard.review-freeze on
 ```
 
-Lowering a fence or the policy word from chat is the person's move: type `/aidlc config set guard.<fence> off`, `/aidlc --guard-policy relaxed|off`, or the confirmation words `guard policy relaxed|off`, choosing one value. The human-turn hook applies the switch at prompt time to the piece of work selected by `--intent <name>` and `--space <name>`, or by the hook payload session's workflow selection when those selectors are omitted, and writes the state and audit row. It reports `AIDLC Guard Policy: ...` as hook context on harnesses that inject it. A nonexistent named intent is refused; without a state file, create the piece of work and type the switch again. No switch is saved for later, and an unrelated reply opens nothing.
+Lowering a fence or the policy word is the person's call. Ask for it in your own words and the agent runs the setter for you; it is recorded as set by you, with your words, and one line says how to undo it. Or type `/aidlc config set guard.<fence> off`, `/aidlc --guard-policy relaxed|off`, or the confirmation words `guard policy relaxed|off`, choosing one value: the human-turn hook applies the typed switch at prompt time to the piece of work selected by `--intent <name>` and `--space <name>`, or by the hook payload session's workflow selection when those selectors are omitted, and writes the state and audit row. It reports `AIDLC Guard Policy: ...` as hook context on harnesses that inject it. A nonexistent named intent is refused; without a state file, create the piece of work and type the switch again. No switch is saved for later, and an unrelated reply opens nothing.
 
-The CLI setters do not lower from chat on their own and perform no switch-authority session lookup. Hooks run on Windows too, so the typed switch works on every harness that forwards the prompt. An already-off fence or an identical policy word already marked `set by you` needs no key because the CLI update is a no-op.
+The CLI setters lower only when a person's chat turn, which no decision has used yet, stands behind them (never on an unattended driver), and perform no switch-authority session lookup. Hooks run on Windows too, so the typed switch works on every harness that forwards the prompt. An already-off fence or an identical policy word already marked `set by you` needs no key because the CLI update is a no-op.
 
-When a guard question offers "turn the check off for this piece of work", choosing it runs nothing: the choice tells you the command to type (`/aidlc config set guard.<fence> off`), and typing it is the move. On Codex the skill is `$aidlc`, and its refusals say so.
+When a guard question offers "turn the check off for this piece of work", choosing it runs nothing: the choice names the command (`/aidlc config set guard.<fence> off`), and saying so or typing it turns the check off. On Codex the skill is `$aidlc`, and its refusals say so.
 
 What counts as typing the switch: a message that begins with `/aidlc` (or `$aidlc`, or `aidlc`) and carries the flags first, such as `/aidlc --guard-policy relaxed`, `/aidlc --guard-policy off --guard.state-transition off`, or `/aidlc --guard-policy relaxed build the auth service` (the description follows the flags and is not read); `config set guard-policy relaxed|off` or `config set guard.<fence> off` after the same command head, followed only by optional `--intent <name>` and `--space <name>` pairs, each at most once and in either order; or the confirmation words `guard policy relaxed|off` on their own. Any other extra token in the config form applies no switch. Case and a trailing period do not matter. A question or remark that mentions a switch is not a switch: `/aidlc why was config set guard.plan-approval off suggested?` changes nothing, and neither does a flag placed after the description.
 
-Direct `intent create --guard-policy relaxed|off` from chat is refused when the value is below the selected scope's default (`relaxed` on an `off` scope is a raise and applies): create the piece of work, then have the person type the switch. Direct `scope change --guard-policy relaxed|off` follows the same lowering rule as `config-change`; an implicit lower scope default preserves the running workflow's stricter value. `AIDLC_UNATTENDED=1` suppresses prompt-time application and refuses CLI lowering. After memory-strict and unattended checks, `fenceKeyBypassed` is the only way a CLI setter lowers without the person's prompt through the fixture or harness-launch presence bypass, not an inline environment assignment. The session-start hook keeps its `presence-bypass-<session>` stamp in the Plan Approval runtime directory for an attended harness launched with `AIDLC_SKIP_HUMAN_PRESENCE_GUARD=1`.
+Direct `intent create --guard-policy relaxed|off` from chat is refused when the value is below the selected scope's default (`relaxed` on an `off` scope is a raise and applies): create the piece of work, then ask for the lower value and the agent sets it. Direct `scope change --guard-policy relaxed|off` follows the same lowering rule as `config-change`; an implicit lower scope default preserves the running workflow's stricter value. `AIDLC_UNATTENDED=1` suppresses prompt-time application and refuses CLI lowering. After memory-strict and unattended checks, a CLI setter lowers when a person's chat turn stands behind it, and otherwise only through `fenceKeyBypassed` through the fixture or harness-launch presence bypass, not an inline environment assignment. The session-start hook keeps its `presence-bypass-<session>` stamp in the Plan Approval runtime directory for an attended harness launched with `AIDLC_SKIP_HUMAN_PRESENCE_GUARD=1`.
 
 Model tools cannot invoke hooks or write `aidlc/.aidlc-sessions/` or any `.aidlc-plan-approval/` or `<record>/.aidlc-engine/gate-words/` directory, as enforced by the [state-transition guard](../reference/06-hooks-and-tools.md#pretooluse-aidlc-state-transition-guardts).
 
@@ -442,19 +447,19 @@ The reviewer-scope setting governs the dispatched reviewer's read/search bound. 
 
 The human-turn hook applies only the switch you type; it does not infer one from a general request or from the fact that you replied. A switchable fence's main-session refusal names its switch, so opening it is one deliberate move rather than a guess about your intent. A CLI setter that would turn a fence off says:
 
-> Turning the review-freeze check off is the person's move: they type `/aidlc config set guard.review-freeze off` and the harness applies it as they say it. This command does not lower a fence on its own.
+> Turning the review-freeze check off is the person's call. Nobody has asked for it in the chat since the last decision, so nothing changed: when the person asks for it, run this again and it is recorded as theirs.
 
 A CLI setter that would turn plan approval off says:
 
-> Turning plan approval off lets code generation start without the person approving the plan, so only they can do it. Ask the user to type `/aidlc config set plan-approval off` themselves, or to say so in their own words; this command does not turn it off on its own.
+> Turning plan approval off lets code generation start without the person approving the plan, so only they turn it off. Nobody has asked for it in the chat since the last decision, so nothing changed: when the person asks for it, run this again and it is recorded as theirs.
 
 A CLI setter that would change the policy to `relaxed` says:
 
-> Setting Guard Policy relaxed lowers fences and is the person's move: they type `/aidlc --guard-policy relaxed` and the harness applies it as they say it. This command does not lower fences on its own.
+> Setting Guard Policy relaxed lowers fences and is the person's call. Nobody has asked for it in the chat since the last decision, so nothing changed: when the person asks for it, run this again and it is recorded as theirs.
 
 Creation with an explicit `relaxed` flag says:
 
-> Creating this intent with Guard Policy relaxed would lower fences. Create it, then have the person type `/aidlc --guard-policy relaxed`; the harness applies it as they say it. A scope default applies without asking.
+> Creating this intent with Guard Policy relaxed would lower fences. Create it, then set Guard Policy relaxed for the work once the person asks for it; it is recorded as theirs. A scope default applies without asking.
 
 Other fence names and `off` use the corresponding name or value; unattended runs append the driver guidance. Memory-held strict refuses before applying a switch or checking a bypass and instead names the memory file to edit. A human-presence refusal names no switch; it says no reply from the person is on record and what happened to one they already sent (the harness's hook steps, or `/aidlc --doctor`), and never asks them to reply again.
 

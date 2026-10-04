@@ -27,7 +27,20 @@ AI-DLC is open-world. Plugins under `plugins/<name>/` contribute additional stag
 
 ## Guards
 
-The guards are the person's switches, never the agent's. When someone asks in plain words to relax or turn off the guards ("stop asking me to re-approve when files change", "turn the guards off"), do not investigate: run no command, read no file, search nothing. Answer in one or two sentences naming the exact command for them to type, `{{SKILL_INVOKE}} --guard-policy relaxed` or `{{SKILL_INVOKE}} --guard-policy off` (one fence: `{{SKILL_INVOKE}} config set guard.<fence> off`), and end the turn; when they type it, the harness applies it as the prompt arrives and records it. A plain-words request to make the guards strict runs `{{INVOKE}} engine config set guard-policy strict` at once; print its output and stop. Never edit `aidlc-state.md`, run a hook, or run a setter to lower a guard on your own initiative. `{{SKILL_INVOKE}} --status` shows the current Guard Policy and every fence with where its setting came from.
+The guards are the person's checks. When they ask in their own words to turn one off or back on, or to change the Guard Policy ("turn the review freeze check off for this project", "stop asking me to re-approve when files change", "turn the guards off", "turn it back on"), do it for them in the same turn and say the line the command prints, word for word: never refuse, never ask them to type it, and never investigate first. Turning a guard on, or Guard Policy `strict`, is always fine; turning one off, or Guard Policy `relaxed` or `off`, happens only when they ask, never on your own initiative and never as a suggestion. Where it applies is what they say: this piece of work, this project, or this machine. When they say neither, use this piece of work while one is open, otherwise this project; the line names where it applied, and say in one sentence how to widen it. For this piece of work run `{{INVOKE}} engine config set <key> <on|off>` with the key from the table (Guard Policy: `{{INVOKE}} engine config set guard-policy <strict|relaxed|off>`). For this project run `{{INVOKE}} config flags --bypass <switch> --local --yes` (`--global` for this machine); `{{INVOKE}} config flags --clear-bypass <switch> --yes` turns it back on everywhere it is recorded. Never edit `aidlc-state.md` or run a hook to change a guard. A typed `{{SKILL_INVOKE}} --guard-policy off` or `{{SKILL_INVOKE}} config set guard.<fence> off` was applied when the message arrived. `{{SKILL_INVOKE}} --status` shows the current Guard Policy and every fence with where its setting came from.
+
+| Check | This piece of work: key | This project or machine: switch |
+|---|---|---|
+| plan approval | `plan-approval` | `AIDLC_DISABLE_PLAN_APPROVAL_GUARD` |
+| review freeze | `guard.review-freeze` | `AIDLC_DISABLE_REVIEW_FREEZE_HOOK` |
+| reviewer read scope | `guard.reviewer-scope` | `AIDLC_DISABLE_REVIEWER_SCOPE_HOOK` |
+| state transition | `guard.state-transition` | none |
+| summary confirmation | `summary-confirmation` | `AIDLC_DISABLE_SUMMARY_CONFIRMATION` |
+| summary confirmation check | none | `AIDLC_SKIP_SUMMARY_CONFIRMATION_GUARD` |
+| human presence | none | `AIDLC_SKIP_HUMAN_PRESENCE_GUARD` |
+| stage output | none | `AIDLC_SKIP_ARTIFACT_GUARD` |
+| revision backstop | none | `AIDLC_SKIP_REVISION_BACKSTOP` |
+| pipeline handoff | none | `AIDLC_DISABLE_ENSEMBLE_EVIDENCE` |
 
 {{SLOT:structure_extra}}
 

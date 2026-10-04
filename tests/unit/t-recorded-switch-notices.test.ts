@@ -32,6 +32,7 @@ import {
   personSpokeSinceGate,
   resolveProjectFlag,
   STOP_HOOK_PROBE_ENV,
+  stateFilePath,
 } from "../../dist/claude/.claude/tools/aidlc-lib.ts";
 import {
   clearSwitchCommand,
@@ -303,6 +304,23 @@ describe("a check switched off for the project is always said, never refused", (
     expect(back.stdout).toContain("The review freeze check is on again for this project.");
     expect(back.stdout.match(/is on again/g)).toHaveLength(1);
     expect(resolveProjectFlag(NAME, NONE, proj)).toBeUndefined();
+  });
+
+  test("config get names a recorded switch by its file, and a clear says when this work still keeps it off", () => {
+    const proj = installedProject();
+    expect(flags(proj, "--bypass", NAME, "--local", "--yes").status).toBe(0);
+    const got = dispatch(proj, ["engine", "config", "get", "guard.review-freeze"]);
+    expect(got.stdout.trim(), got.stderr).toBe(`off (${NAME} in aidlc.settings.local.json)`);
+    // This piece of work runs with Guard Policy off, which keeps the check off on its own.
+    const state = stateFilePath(proj);
+    writeFileSync(state, readFileSync(state, "utf-8").replace(/^- \*\*Change Control\*\*:.*$/m, "- **Guard Policy**: off (set by you)"));
+    const cleared = flags(proj, "--clear-bypass", NAME, "--yes");
+    expect(cleared.status, cleared.stderr).toBe(0);
+    expect(cleared.stdout).toContain(
+      "The review freeze check switch is cleared for this project, but it stays off for this piece of work: " +
+        'guard policy off (set by you). Say "turn it on for this work" to restore it there (/aidlc config set guard.review-freeze on).',
+    );
+    expect(cleared.stdout).not.toContain("is on again");
   });
 
   test("off, on, and off again by editing the file is two changes, each said once", () => {

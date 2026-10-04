@@ -1880,9 +1880,9 @@ describe("t333 (9) fences: the policy lowers a fixed set; per-run switches can l
     expect(rowsOf(proj, "GUARD_DISABLED")).toHaveLength(1);
   });
 
-  const fenceRefusal = "Turning the state-transition check off is the person's move: they type `/aidlc config set guard.state-transition off` and the harness applies it as they say it. This command does not lower a fence on its own.";
-  const policyRefusal = "Setting Guard Policy relaxed lowers fences and is the person's move: they type `/aidlc --guard-policy relaxed` and the harness applies it as they say it. This command does not lower fences on its own.";
-  const createRefusal = "Creating this intent with Guard Policy relaxed would lower fences. Create it, then have the person type `/aidlc --guard-policy relaxed`; the harness applies it as they say it. A scope default applies without asking.";
+  const fenceRefusal = "Turning the state-transition check off is the person's call. Nobody has asked for it in the chat since the last decision, so nothing changed: when the person asks for it, run this again and it is recorded as theirs.";
+  const policyRefusal = "Setting Guard Policy relaxed lowers fences and is the person's call. Nobody has asked for it in the chat since the last decision, so nothing changed: when the person asks for it, run this again and it is recorded as theirs.";
+  const createRefusal = "Creating this intent with Guard Policy relaxed would lower fences. Create it, then set Guard Policy relaxed for the work once the person asks for it; it is recorded as theirs. A scope default applies without asking.";
 
   // Human turns and refusals may be logged without mutating workflow facts.
   function mutationRows(proj: string, intent?: string, space?: string) {
@@ -1987,17 +1987,44 @@ describe("t333 (9) fences: the policy lowers a fixed set; per-run switches can l
     expect(readFileSync(state, "utf-8")).toBe(lowered);
   });
 
-  test.each<{ operation: string; args: string[]; refusal: string }>([
+  // The person asked in the chat, so the agent's command is theirs: it is set
+  // by you, the audit row keeps their words, and one line says how to undo it.
+  test.each<{ operation: string; args: string[]; event: string; line: string; undo: string }>([
     {
       operation: "fence setter",
       args: ["config-change", "--guard.state-transition", "off"],
-      refusal: fenceRefusal,
+      event: "GUARD_DISABLED",
+      line: "The state transition check is off for this piece of work, because you said:",
+      undo: 'Say "turn it back on" to restore it (/aidlc config set guard.state-transition on).',
     },
     {
       operation: "policy setter",
       args: ["config-change", "--guard-policy", "relaxed"],
-      refusal: policyRefusal,
+      event: "GUARD_POLICY_SET",
+      line: "Guard Policy is relaxed for this piece of work, because you said:",
+      undo: 'Say "put Guard Policy back to strict" to restore it (/aidlc --guard-policy strict).',
     },
+  ])("a CLI $operation lowers once the person asked for it in the chat", ({ args, event, line, undo }) => {
+    const { proj, state } = project("enterprise");
+    const asked = "please stop re-checking the  state transitions for this work";
+    recordHumanPrompt(proj, asked);
+    const applied = run(UTILITY, args, proj, FENCE_ENV_CLEAR);
+    expect(applied.status, applied.stderr).toBe(0);
+    expect(applied.stdout).toContain(`${line} "please stop re-checking the state transitions for this work". ${undo}`);
+    const rows = rowsOf(proj, event);
+    expect(rows).toHaveLength(1);
+    expect(auditBlockField(rows[0].block, "Source")).toBe("you");
+    expect(auditBlockField(rows[0].block, "Words")).toBe("please stop re-checking the state transitions for this work");
+    const updated = readFileSync(state, "utf-8");
+    expect(updated).toMatch(event === "GUARD_POLICY_SET" ? /Guard Policy\*\*: relaxed \(set by you\)/ : /Guards Off\*\*: state-transition \(set by you\)/);
+    // The turn is the person's for this request only: an unattended driver never lowers.
+    const second = project("enterprise");
+    recordHumanPrompt(second.proj, asked);
+    const unattended = run(UTILITY, args, second.proj, { ...FENCE_ENV_CLEAR, AIDLC_UNATTENDED: "1" });
+    expect(unattended.status).toBe(1);
+  });
+
+  test.each<{ operation: string; args: string[]; refusal: string }>([
     {
       operation: "intent creation",
       args: [
@@ -2340,19 +2367,19 @@ describe("t333 (9) fences: the policy lowers a fixed set; per-run switches can l
     expect(readdirSync(intents).sort()).toEqual(records);
   });
 
-  test("scope-change refuses lowering until the hook applies combined switches without a slash", () => {
-    const { proj, state } = project("enterprise");
-    recordHumanPrompt(proj, "/aidlc --guard-policy relaxed");
+  test("a scope-change lowering passes once the person has spoken, and the typed combined switch applies without a slash", () => {
     const args = ["scope-change", "--scope", "classic", "--guard-policy", "relaxed", "--guard.state-transition", "off"];
-    const before = readFileSync(state, "utf-8");
-    const ledger = mutationRows(proj);
-    const refused = run(UTILITY, args, proj, FENCE_ENV_CLEAR);
-    expect(refused.status).toBe(1);
-    expect(JSON.parse(refused.stderr)).toEqual({
-      error: fenceRefusal.replaceAll("state-transition", "state-transition"),
-    });
-    expect(readFileSync(state, "utf-8")).toBe(before);
-    expect(mutationRows(proj)).toEqual(ledger);
+    // The person's turn stands behind the agent's scope change.
+    const asked = project("enterprise");
+    recordHumanPrompt(asked.proj, "move this to classic and stop the state transition checks");
+    const applied = run(UTILITY, args, asked.proj, FENCE_ENV_CLEAR);
+    expect(applied.status, applied.stderr).toBe(0);
+    expect(getField(readFileSync(asked.state, "utf-8"), "Scope")).toBe("classic");
+    expect(getField(readFileSync(asked.state, "utf-8"), GUARDS_OFF_FIELD)).toBe("state-transition (set by you)");
+    expect(auditBlockField(rowsOf(asked.proj, "GUARD_DISABLED")[0].block, "Words"))
+      .toBe("move this to classic and stop the state transition checks");
+    // The typed combined switch is applied by the hook at prompt time.
+    const { proj, state } = project("enterprise");
     recordHumanPrompt(
       proj,
       "aidlc --scope classic --guard-policy relaxed build auth --guard.state-transition off",

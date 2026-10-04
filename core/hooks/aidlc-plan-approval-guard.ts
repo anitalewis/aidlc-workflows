@@ -91,7 +91,7 @@ import {
   loadStageGraph,
   parseCheckboxes,
   parseStateStageSuffixes,
-  personSpokeSinceGate,
+  personAskedSinceGate,
   readActiveDirectiveMarker,
   activeDirectiveOutOfDateReason,
   recordHookDrop,
@@ -879,7 +879,29 @@ function recordedSwitchChangeAdmitted(projectDir: string, args: readonly string[
       return false;
     }
   }
-  return changes && (!lowers || (process.env.AIDLC_UNATTENDED !== "1" && personSpokeSinceGate(projectDir)));
+  return changes && (!lowers || personAskedSinceGate(projectDir));
+}
+
+// A check for this piece of work turned off or back on with `engine config set`,
+// and nothing else. Turning one on, or raising Guard Policy, only adds a stop,
+// so it never waits. Turning one off is the person's call, so while a plan
+// waits it passes once they have asked in the chat since the last decision:
+// the setter then records it as theirs, with their words, and says how to undo it.
+const CHAT_SWITCHES: Readonly<Record<string, { on: readonly string[]; off: readonly string[] }>> = {
+  "plan-approval": { on: ["on"], off: ["off"] },
+  "guard.plan-approval": { on: ["on"], off: ["off"] },
+  "summary-confirmation": { on: ["on"], off: ["off"] },
+  "guard.review-freeze": { on: ["on"], off: ["off"] },
+  "guard.state-transition": { on: ["on"], off: ["off"] },
+  "guard.reviewer-scope": { on: ["on"], off: ["off"] },
+  "guard-policy": { on: ["strict"], off: ["relaxed", "off"] },
+};
+
+function chatSwitchChangeAdmitted(projectDir: string, args: readonly string[]): boolean {
+  if (args.length !== 5 || args[0] !== "engine" || args[1] !== "config" || args[2] !== "set") return false;
+  const values = Object.hasOwn(CHAT_SWITCHES, args[3]) ? CHAT_SWITCHES[args[3]] : undefined;
+  if (values === undefined) return false;
+  return values.on.includes(args[4]) || (values.off.includes(args[4]) && personAskedSinceGate(projectDir));
 }
 
 // How a shell command line is read. Every harness keeps the POSIX reading
@@ -1182,14 +1204,6 @@ function isPlanApprovalPrerequisite(args: string[], gateHeld = false): boolean {
   }
   if (noun === "state" && CONSTRUCTION_ENTRY_SETTERS.has(verb)) return true;
   if (noun === "bolt" && verb === "set-autonomy") return true;
-  // Turning plan approval on only adds the stop, so the person can ask for it
-  // while a plan waits. Turning it off stays the person's own typed turn.
-  if (
-    noun === "config" && verb === "set" && args.length === 5 &&
-    ["plan-approval", "guard.plan-approval"].includes(args[3] ?? "") && args[4] === "on"
-  ) {
-    return true;
-  }
   // The walking-skeleton stance is the same kind of entry choice, recorded
   // through report without a stage result.
   if (noun === "orchestrate" && verb === "report") {
@@ -1303,7 +1317,8 @@ function isFrameworkToolInvocation(
 ): boolean {
   const admitted = (engineArgs: string[]): boolean =>
     isPlanApprovalPrerequisite(engineArgs, gateHeld) || askAdmits(engineArgs) ||
-    isReadOnlyDiagnostic(engineArgs) || recordedSwitchChangeAdmitted(projectDir, engineArgs);
+    isReadOnlyDiagnostic(engineArgs) || recordedSwitchChangeAdmitted(projectDir, engineArgs) ||
+    chatSwitchChangeAdmitted(projectDir, engineArgs);
   if (isNativePlanApprovalPrerequisite(name, args, admitted, enginePaths)) {
     // A wrapper (env -C, sudo -D, xargs) can run it against another directory
     // than the one these admissions were judged for.
@@ -1447,7 +1462,8 @@ function shellInvocationNeedsApproval(
     !invocation.dataDriven && !invocation.executableResolutionChanged;
   const admitted = (engineArgs: string[]): boolean =>
     isPlanApprovalPrerequisite(engineArgs, gateHeld) || askAdmits(engineArgs) ||
-    isReadOnlyDiagnostic(engineArgs) || recordedSwitchChangeAdmitted(projectDir, engineArgs);
+    isReadOnlyDiagnostic(engineArgs) || recordedSwitchChangeAdmitted(projectDir, engineArgs) ||
+    chatSwitchChangeAdmitted(projectDir, engineArgs);
   if (
     dialect.pathsAsWritten && /[\\/]/.test(executable) &&
     !isNativePlanApprovalPrerequisite(executable, invocation.args, admitted, true)

@@ -1277,7 +1277,7 @@ describe("t218 Kiro IDE hook adapter (USER_PROMPT env context)", () => {
       // does not hold it back and picks it up at once.
       const bypass = run(named.split(" "));
       expect(bypass.status, bypass.stdout + bypass.stderr).toBe(0);
-      expect(summaryLine()).toBe("Summary Confirmation: off (from env AIDLC_DISABLE_SUMMARY_CONFIRMATION)");
+      expect(summaryLine()).toBe("Summary Confirmation: off (from AIDLC_DISABLE_SUMMARY_CONFIRMATION in aidlc.settings.local.json)");
       const cleared = run(named.replace("--bypass", "--clear-bypass").split(" "));
       expect(cleared.status, cleared.stdout + cleared.stderr).toBe(0);
       expect(summaryLine()).toBe("Summary Confirmation: on (from scope feature)");

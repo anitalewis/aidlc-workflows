@@ -5322,6 +5322,13 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:isKillSwitchSource",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:isNonAnswer",
       "minMechanism": "none",
       "coveredBy": [
@@ -5608,6 +5615,13 @@
         }
       ],
       "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:killSwitchSource",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
     },
     {
       "unitClass": "function",
@@ -7120,6 +7134,13 @@
     {
       "unitClass": "function",
       "unitId": "function:PER_UNIT_FOR_EACH",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:personAskedSinceGate",
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"

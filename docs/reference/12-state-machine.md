@@ -677,7 +677,7 @@ back on while that line stands, unless a machine-wide kill switch takes
 precedence. The persisted `Guards Off` entry remains and takes effect again
 only after the memory line no longer holds strict. Scope-owned Guard Policy
 follows a stricter new scope default, while a lower default preserves the
-stored value until the person types the lowering switch. Ceremony values still
+stored value until the person asks for the lower value. Ceremony values still
 follow the new scope under memory policy, which controls the effective Guard
 Policy. Changed stored values or sources are audited with scope provenance;
 explicit overrides and absent legacy rows are preserved. Explicit Guard
@@ -712,8 +712,8 @@ A fence already off for this work and a policy word already equal to the
 current line with source `you` need no key.
 Direct `intent create --guard-policy relaxed|off` from chat is refused when the
 value is below the scope default: create
-the piece of work, then have the person type the switch; scope defaults apply
-without asking.
+the piece of work, then set the lower value once the person asks for it; scope
+defaults apply without asking.
 `AIDLC_UNATTENDED=1` suppresses prompt-time application and refuses CLI lowering
 before the presence bypass can apply.
 The session-start hook keeps its `presence-bypass-<session>` stamp in the Plan
@@ -1317,8 +1317,10 @@ piece of work selected by the message or the hook payload session.
 A picked `lower-fence` choice does not lower a fence or the policy word.
 Memory-held strict refuses first, and unattended runs cannot lower through this
 path.
-CLI setters refuse lowering except for an already-set no-op or the
-fixture/harness-launch presence bypass; no saved switch is consumed by a setter.
+CLI setters refuse lowering except for an already-set no-op, a person's chat
+turn since the last decision behind the command (`personAskedSinceGate`, never
+unattended), or the fixture/harness-launch presence bypass; no saved switch is
+consumed by a setter.
 
 The runtime-integrity check refuses recognized direct and indirect tool-call
 routes to hooks and their records, including paths, environment assignments,

@@ -271,9 +271,10 @@ After approval:
 (in their own words, or `/aidlc --plan-approval off`), or the machine switch
 `AIDLC_DISABLE_PLAN_APPROVAL_GUARD=1` can turn the plan stop off for this piece
 of work; the engine then routes straight to the build with the notice above.
-Only the person turns it off: never run a command that turns it off, and never
-suggest turning it off. Turning it back on (`config set plan-approval on`) is
-fine whenever they ask.
+Only the person turns it off: when they ask in their own words, run
+`config set plan-approval off` for them and say the line it prints; never turn
+it off on your own and never suggest it. Turning it back on
+(`config set plan-approval on`) is fine whenever they ask.
 - A new stage attempt (a jump, a rejected gate, a workflow restart) needs its own
   approval: `next` asks again, or, while plan approval is off, builds the plan
   for that attempt with the same one-line notice. After a rejected gate, while the plan is still

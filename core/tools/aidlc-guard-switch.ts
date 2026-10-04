@@ -26,7 +26,9 @@ import {
   guardPolicyMemoryStrictRefusal,
   type GuardSwitch,
   guardSwitchRefusal,
+  isKillSwitchSource,
   isoTimestamp,
+  latestPersonTurn,
   listIntentDirs,
   loadScopeMetadata,
   memoryGuardPolicyDeclarations,
@@ -36,6 +38,7 @@ import {
   parseGuardsOffLine,
   parseGuardsOnLine,
   parseTypedGuardSwitchRequest,
+  personAskedSinceGate,
   planApprovalMachineSwitchTrusted,
   planApprovalRuntimeFile,
   readPlanApprovalRuntimeRecord,
@@ -60,6 +63,8 @@ import {
   writeStateFile,
   parseGuardPolicyStateLine,
 } from "./aidlc-lib.ts";
+import { quoted } from "./aidlc-recorded-switches.ts";
+import { entrySkillInvocation } from "./aidlc-runtime-paths.ts";
 
 function throwSettingsError(message: string): never {
   throw new Error(message);
@@ -368,9 +373,17 @@ export function applyIntentSettings(
   if (lowering.length > 0 && process.env.AIDLC_UNATTENDED === "1") {
     die(guardSwitchRefusal(lowering[0], "config"));
   }
-  if (lowering.length > 0 && !typedByPerson && !fenceKeyBypassed(projectDir, sessionId)) {
+  // The person asked in the chat: their turn, which no decision has used yet,
+  // stands behind the agent's command, so the change is theirs, recorded with
+  // their words and said in one line with the way back.
+  const askedInChat = lowering.length > 0 && !typedByPerson && personAskedSinceGate(projectDir);
+  if (lowering.length > 0 && !typedByPerson && !askedInChat && !fenceKeyBypassed(projectDir, sessionId)) {
     die(guardSwitchRefusal(lowering[0], "config"));
   }
+  const askedWords = askedInChat ? latestPersonTurn(projectDir)?.words ?? null : null;
+  const lowered = (key: GuardSwitch["key"]): boolean => askedInChat && lowering.some((item) => item.key === key);
+  const wordsField = (key: GuardSwitch["key"]): Record<string, string> =>
+    lowered(key) && askedWords ? { Words: quoted(askedWords) } : {};
 
   const audit: AuditEntryInput[] = [];
   const lines: string[] = [];
@@ -436,7 +449,7 @@ export function applyIntentSettings(
         if (oldValue !== changeControl || cc.conflict !== undefined || !scopeDefault("guard-policy")) {
           audit.push({
             eventType: "GUARD_POLICY_SET",
-            fields: { "Old Value": oldValue, "New Value": changeControl, Source: ccRequest.source },
+            fields: { "Old Value": oldValue, "New Value": changeControl, Source: ccRequest.source, ...wordsField("guard-policy") },
           });
         }
         const oldDisplay = cc.conflict === undefined && cc.intent === null && cc.rawStateValue !== null
@@ -475,7 +488,12 @@ export function applyIntentSettings(
       // Each event named literally at its own call, not through a ternary on
       // eventType: the emitter drift guard reads these call sites as text, and a
       // computed event name is invisible to it.
-      const fenceFields = { Guard: request.fence, Scope: scopeName, Source: request.source };
+      const fenceFields = {
+        Guard: request.fence,
+        Scope: scopeName,
+        Source: request.source,
+        ...(after.value === "off" ? wordsField(`guard.${request.fence}` as GuardSwitch["key"]) : {}),
+      };
       audit.push(
         after.value === "off"
           ? { eventType: "GUARD_DISABLED", fields: fenceFields }
@@ -496,7 +514,7 @@ export function applyIntentSettings(
     // own identical choice.
     const flag = CEREMONY_FLAGS[key].slice(2) as ConfigKey;
     const requestedSource = requested[flag]!.source;
-    const source = requestedSource === "you" && !typedByPerson ? "command" : requestedSource;
+    const source = requestedSource === "you" && !typedByPerson && !askedInChat ? "command" : requestedSource;
     const field = CEREMONY_FIELDS[key];
     const previous = getField(content, field);
     const line = formatCeremony(value, source);
@@ -509,7 +527,10 @@ export function applyIntentSettings(
     const oldValue = resolution.intent?.value ?? resolution.rawStateValue ?? resolution.scopeDefault;
     // Same as Guard Policy: a scope's default that keeps the value writes no row.
     if (oldValue === value && scopeDefault(flag)) continue;
-    audit.push({ eventType: "CEREMONY_SET", fields: { Key: key, Old: oldValue, New: value, Source: source } });
+    audit.push({
+      eventType: "CEREMONY_SET",
+      fields: { Key: key, Old: oldValue, New: value, Source: source, ...wordsField(flag as GuardSwitch["key"]) },
+    });
     const oldDisplay = resolution.intent === null && resolution.rawStateValue !== null
       ? resolution.rawStateValue : formatCeremony(resolution.value, resolution.source);
     lines.push(`${field} changed: ${oldDisplay} to ${line}`);
@@ -519,7 +540,29 @@ export function applyIntentSettings(
         : "Each code plan is now shown for approval before it is built.");
     }
   }
+  if (askedInChat) {
+    for (const item of lowering) lines.push(askedSwitchLine(item, askedWords, cc.value));
+  }
   return { content, audit, lines };
+}
+
+// What the person hears when the agent turned one of their checks off because
+// they asked in the chat: what is off, for this piece of work, in their words,
+// and the way back.
+function askedSwitchLine(item: GuardSwitch, words: string | null, previousPolicy: string): string {
+  const entry = entrySkillInvocation();
+  const why = words ? `because you said: "${quoted(words)}"` : "as you asked in the chat";
+  if (item.key === "guard-policy") {
+    return `Guard Policy is ${item.value} for this piece of work, ${why}. ` +
+      `Say "put Guard Policy back to ${previousPolicy}" to restore it (${entry} --guard-policy ${previousPolicy}).`;
+  }
+  const check = item.key === "plan-approval"
+    ? { label: "plan approval check", key: "plan-approval" }
+    : item.key === "summary-confirmation"
+    ? { label: "summary confirmation", key: "summary-confirmation" }
+    : { label: `${item.key.slice("guard.".length).replace("reviewer-scope", "reviewer read scope").replaceAll("-", " ")} check`, key: item.key };
+  return `The ${check.label} is off for this piece of work, ${why}. ` +
+    `Say "turn it back on" to restore it (${entry} config set ${check.key} on).`;
 }
 
 export interface TypedGuardSwitchOutcome {
@@ -640,10 +683,10 @@ export function resolvePlanApprovalSetting(
 ): PlanApprovalSetting {
   const env = planApprovalEnv(projectDir, selection.sessionId ?? null);
   const resolution = resolveCeremony("plan_approval", getField(stateContent ?? "", "Scope"), stateContent, env);
-  // The machine switch is read from the environment itself, never from saved text.
-  const machineOff = `env ${CEREMONY_ENV.plan_approval}`;
-  if (resolution.source === machineOff && resolveProjectFlag(CEREMONY_ENV.plan_approval, env) === "1") {
-    return { value: "off", source: machineOff };
+  // The machine switch is read from the environment or the settings files
+  // themselves, never from saved state text.
+  if (isKillSwitchSource(resolution.source) && resolveProjectFlag(CEREMONY_ENV.plan_approval, env) === "1") {
+    return { value: "off", source: resolution.source };
   }
   // The source is repeated to the person word for word, so only the forms the
   // engine writes pass; anything else a hand-edited state line carries does not.

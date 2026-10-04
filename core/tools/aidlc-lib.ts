@@ -81,6 +81,7 @@ export {
 } from "./aidlc-reply-reader.ts";
 import {
   _resetSettingsCacheForTests,
+  bypassRecordedIn,
   LOCAL_SETTINGS_FILE,
   RECORDABLE_PROJECT_BYPASSES,
   resolveAidlcSettings,
@@ -670,6 +671,28 @@ export function resolveProjectFlag(
   if (typeof value === "boolean") return value ? "1" : "";
   if (typeof value === "number") return String(value);
   return typeof value === "string" ? value : undefined;
+}
+
+/**
+ * How `config get` and status name a switch that keeps a check off: `env NAME`
+ * when the environment this process started with sets it (removed only by
+ * starting without it), or `NAME in <file>` when a settings file records it
+ * (`config flags --clear-bypass NAME` turns it back on).
+ */
+export function killSwitchSource(
+  name: string,
+  env: NodeJS.ProcessEnv = process.env,
+  projectDir?: string,
+): string {
+  if (Object.hasOwn(env, name)) return `env ${name}`;
+  const recorded = bypassRecordedIn(resolveProjectDir(projectDir), name);
+  if (recorded === null) return `${name} in the AI-DLC settings`;
+  return `${name} in ${recorded.target === "global" ? recorded.path : basename(recorded.path)}`;
+}
+
+/** A source killSwitchSource wrote: a switch, not the work's own setting. */
+export function isKillSwitchSource(source: string): boolean {
+  return source.startsWith("env ") || /^AIDLC_[A-Z0-9_]+ in /.test(source);
 }
 
 export function runnerFrontmatterAdditions(): readonly string[] {
@@ -10734,6 +10757,14 @@ export function personSpokeSinceGate(projectDir: string): boolean {
   } catch {
     return false;
   }
+}
+
+// The person asked for what the agent runs now: their chat turn, which no
+// decision has used yet, stands behind it. An unattended driver has no person
+// behind it. Turning one of the person's checks off from the agent's command
+// needs this, wherever it is asked.
+export function personAskedSinceGate(projectDir: string): boolean {
+  return process.env.AIDLC_UNATTENDED !== "1" && personSpokeSinceGate(projectDir);
 }
 
 // The gate's "Request Changes" choice, matched the way a person types it: any
@@ -35026,7 +35057,7 @@ export function resolveCeremony(
     key,
     value: disabled ? "off" : intent?.value ?? scopeDefault,
     source: disabled
-      ? `env ${CEREMONY_ENV[key]}`
+      ? killSwitchSource(CEREMONY_ENV[key], env)
       : intent?.source ?? (declared === undefined ? "default" : `scope ${scopeName}`),
     scopeDefault,
     intent,
@@ -35478,27 +35509,31 @@ export function parseTypedGuardSwitches(prompt: string): GuardSwitch[] {
   return parseTypedGuardSwitchRequest(prompt).switches;
 }
 
+// The refusal when the agent turns one of the person's checks off with nobody
+// having asked for it in the chat since the last decision. When the person
+// asks, the same command runs and is recorded as theirs.
 export function guardSwitchRefusal(
   wanted: GuardSwitch,
   context: "config" | "intent-create",
 ): string {
   const hint = humanTurnMintAllowed() ? "" : unattendedHumanPresenceHint();
-  const entry = entrySkillInvocation();
+  const asked = "Nobody has asked for it in the chat since the last decision, so nothing changed: " +
+    "when the person asks for it, run this again and it is recorded as theirs.";
   if (wanted.key === "plan-approval") {
-    return `Turning plan approval off lets code generation start without the person approving the plan, so only they can do it. Ask the user to type \`${entry} config set plan-approval off\` themselves, or to say so in their own words; this command does not turn it off on its own.${hint}`;
+    return `Turning plan approval off lets code generation start without the person approving the plan, so only they turn it off. ${asked}${hint}`;
   }
   if (wanted.key === "summary-confirmation") {
-    return `Turning summary confirmation off skips the person's \`Looks correct\` check before a stage writes its output, so only they can do it. Ask the user to type \`${entry} config set summary-confirmation off\` themselves; this command does not turn it off on its own.${hint}`;
+    return `Turning summary confirmation off skips the person's \`Looks correct\` check before a stage writes its output, so only they turn it off. ${asked}${hint}`;
   }
   if (wanted.key !== "guard-policy") {
     const fence = wanted.key.slice("guard.".length);
-    return `Turning the ${fence} check off is the person's move: they type \`${entry} config set guard.${fence} off\` and the harness applies it as they say it. This command does not lower a fence on its own.${hint}`;
+    return `Turning the ${fence} check off is the person's call. ${asked}${hint}`;
   }
   const value = wanted.value;
   if (context === "intent-create") {
-    return `Creating this intent with Guard Policy ${value} would lower fences. Create it, then have the person type \`${entry} --guard-policy ${value}\`; the harness applies it as they say it. A scope default applies without asking.${hint}`;
+    return `Creating this intent with Guard Policy ${value} would lower fences. Create it, then set Guard Policy ${value} for the work once the person asks for it; it is recorded as theirs. A scope default applies without asking.${hint}`;
   }
-  return `Setting Guard Policy ${value} lowers fences and is the person's move: they type \`${entry} --guard-policy ${value}\` and the harness applies it as they say it. This command does not lower fences on its own.${hint}`;
+  return `Setting Guard Policy ${value} lowers fences and is the person's call. ${asked}${hint}`;
 }
 
 export function parseGuardFence(raw: string | null | undefined): GuardFence | null {
@@ -35591,7 +35626,7 @@ export function resolveFences(
   for (const fence of GUARD_FENCES) {
     const env = GUARD_FENCE_ENV[fence];
     if (env !== undefined && resolveProjectFlag(env) === "1") {
-      out[fence] = { fence, value: "off", source: `env ${env}` };
+      out[fence] = { fence, value: "off", source: killSwitchSource(env) };
     } else if (policy.memoryStrict === null && isSwitchableGuardFence(fence) && perRunOff.includes(fence)) {
       out[fence] = { fence, value: "off", source: "you" };
     } else if (isSwitchableGuardFence(fence) && perRunOn.includes(fence)) {

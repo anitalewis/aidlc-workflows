@@ -535,7 +535,24 @@ describe("only the person turns plan approval off", () => {
     expect(guardBash(proj, "aidlc engine config set plan-approval on; touch src/x.ts")).toBe(2);
   });
 
-  test("a command cannot turn it off, and anyone can turn it back on", () => {
+  test("asked for in the chat, the agent's command turns it off as the person's, with the way back", () => {
+    const proj = project("on");
+    // Plain words the switch grammar does not read: the agent understands them.
+    reply(proj, "I trust these plans, let it build them without me");
+    const off = utility(proj, ["config-change", "--plan-approval", "off"]);
+    expect(off.status, off.stderr).toBe(0);
+    expect(planApprovalLine(proj)).toBe("off (set by you)");
+    expect(off.stdout).toContain(
+      'The plan approval check is off for this piece of work, because you said: "I trust these plans, let it build them without me". ' +
+        'Say "turn it back on" to restore it (/aidlc config set plan-approval on).',
+    );
+    // The way back it names runs as written.
+    const back = utility(proj, ["config-change", "--plan-approval", "on"]);
+    expect(back.status, back.stderr).toBe(0);
+    expect(planApprovalLine(proj)).toBe("on (set by a command)");
+  });
+
+  test("a command nobody asked for cannot turn it off, and anyone can turn it back on", () => {
     const proj = project("on");
     const refused = utility(proj, ["config-change", "--plan-approval", "off"]);
     expect(refused.status).toBe(1);

@@ -1183,13 +1183,14 @@ about again) and `review-freeze`, and `off` lowers those two
 plus `state-transition` and `reviewer-scope`. `human-presence` is never lowered
 by the policy word.
 
-Setting `guard-policy relaxed` or `guard-policy off` from chat is the person's
-move: they type `/aidlc --guard-policy relaxed` or the confirmation words
-`guard policy relaxed` (use `off` for that value), and the human-turn hook applies
-the switch when the prompt arrives, writes the state line and audit row, and
-reports `AIDLC Guard Policy: ...` as hook context on harnesses that inject it.
-The conductor runs `next` and relays the stand-aside line or harness note; it
-does not run the lowering setter itself.
+Setting `guard-policy relaxed` or `guard-policy off` is the person's call.
+Asked for in their own words, the conductor runs the setter for them: it is
+recorded as set by you, the audit row keeps their words, and one line says how
+to put it back. Typed as `/aidlc --guard-policy relaxed` or the confirmation
+words `guard policy relaxed` (use `off` for that value), the human-turn hook
+applies the switch when the prompt arrives, writes the state line and audit row,
+and reports `AIDLC Guard Policy: ...` as hook context on harnesses that inject
+it; the conductor then runs `next` and relays the stand-aside line or harness note.
 For `guard policy strict` or another plain-words request for strict, the conductor
 runs `config-change --guard-policy <strict|relaxed|off>` with `strict` at once,
 prints its output verbatim, and stops.
@@ -1209,9 +1210,11 @@ application and refuses CLI lowering.
 Scope defaults apply without asking.
 An already-off fence or an identical policy word already marked `set by you`
 needs no key because the CLI update is a no-op.
-After memory-strict and unattended checks, `fenceKeyBypassed` is the only way a
-CLI setter lowers without the person's prompt: it recognizes the fixture or
-harness-launch presence bypass, not an inline environment assignment.
+After memory-strict and unattended checks, a CLI setter lowers when a person's
+chat turn, which no decision has used yet, stands behind it (the person asked,
+and the agent runs it for them). Otherwise only `fenceKeyBypassed` lets it
+lower: it recognizes the fixture or harness-launch presence bypass, not an
+inline environment assignment.
 The session-start hook keeps its `presence-bypass-<session>` stamp in the Plan
 Approval runtime directory for an attended harness launched with
 `AIDLC_SKIP_HUMAN_PRESENCE_GUARD=1`.
@@ -1232,17 +1235,17 @@ Codex uses `$aidlc`, and its refusals name `$aidlc` instead of `/aidlc`.
 
 A CLI setter that would change the policy to `relaxed` refuses with:
 
-> Setting Guard Policy relaxed lowers fences and is the person's move: they type `/aidlc --guard-policy relaxed` and the harness applies it as they say it. This command does not lower fences on its own.
+> Setting Guard Policy relaxed lowers fences and is the person's call. Nobody has asked for it in the chat since the last decision, so nothing changed: when the person asks for it, run this again and it is recorded as theirs.
 
 Direct `scope change --guard-policy relaxed|off` uses the same rule. Direct
 `intent create --guard-policy relaxed|off` from chat is refused when the value
 is below that default (`relaxed` on an `off` scope is a raise and applies):
-create the piece of work, then have the person type the switch. Naming the scope's own default at creation records the scope's
+create the piece of work, then set the lower value once the person asks for it. Naming the scope's own default at creation records the scope's
 value without another prompt. A running workflow preserves its stricter policy
 when moving to a scope with a lower default. Creation that would lower the
 policy to `relaxed` refuses with:
 
-> Creating this intent with Guard Policy relaxed would lower fences. Create it, then have the person type `/aidlc --guard-policy relaxed`; the harness applies it as they say it. A scope default applies without asking.
+> Creating this intent with Guard Policy relaxed would lower fences. Create it, then set Guard Policy relaxed for the work once the person asks for it; it is recorded as theirs. A scope default applies without asking.
 
 The `off` refusals use `off` in place of `relaxed`; unattended runs also receive
 the driver guidance. A guard-recovery `lower-fence` choice is human-input guidance,
@@ -1370,7 +1373,7 @@ remains and takes effect again only after the memory line no longer holds strict
 
 A CLI setter that would turn the review-freeze fence off refuses with:
 
-> Turning the review-freeze check off is the person's move: they type `/aidlc config set guard.review-freeze off` and the harness applies it as they say it. This command does not lower a fence on its own.
+> Turning the review-freeze check off is the person's call. Nobody has asked for it in the chat since the last decision, so nothing changed: when the person asks for it, run this again and it is recorded as theirs.
 
 The other fence refusals substitute that fence's name; unattended runs also
 receive the driver guidance. This command controls the three switchable fences,
@@ -1447,17 +1450,18 @@ remove hooks, remove required stage gates, or disable the single pre-merge
 reviewer used when you explicitly choose autonomous construction.
 
 Turning summary confirmation off removes the person's `Looks correct`
-checkpoint, so it follows the fence rule: the person types
+checkpoint, so it follows the fence rule: the person asks for it and the agent
+runs the setter for them, or the person types
 `/aidlc config set summary-confirmation off` or `/aidlc --summary-confirmation
 off`, and the human-turn hook applies it at prompt time. The message must carry
 settings alone: beside a description (`/aidlc --summary-confirmation off build
 the export`) or in a question about the flag, the hook applies nothing, so the
 work already under way keeps its checkpoint and new work gets the flag only
 when it is created. A CLI setter
-(`config set`, `config-change`, or `scope-change`) run without that typed turn
-refuses with:
+(`config set`, `config-change`, or `scope-change`) run when nobody has asked for
+it since the last decision refuses with:
 
-> Turning summary confirmation off skips the person's `Looks correct` check before a stage writes its output, so only they can do it. Ask the user to type `/aidlc config set summary-confirmation off` themselves; this command does not turn it off on its own.
+> Turning summary confirmation off skips the person's `Looks correct` check before a stage writes its output, so only they turn it off. Nobody has asked for it in the chat since the last decision, so nothing changed: when the person asks for it, run this again and it is recorded as theirs.
 
 An off already saved as an explicit choice is a no-op. A scope-owned off (for
 example `off (from scope classic)`) still needs the person, because saving it
@@ -1560,14 +1564,17 @@ when the harness session started with it, when it is recorded with
 `config flags --bypass`, or when no harness session is recorded in the project;
 set inline on one command inside a session, it is ignored. Status then reads, for
 example, `Plan Approval: on (guard policy strict (from project.md))` or
-`Plan Approval: off (from env AIDLC_DISABLE_PLAN_APPROVAL_GUARD)`.
+`Plan Approval: off (from env AIDLC_DISABLE_PLAN_APPROVAL_GUARD)` when the
+environment sets it, or `Plan Approval: off (from AIDLC_DISABLE_PLAN_APPROVAL_GUARD in aidlc.settings.local.json)`
+when `config flags --bypass` recorded it.
 
-Only the person turns it off: they type `/aidlc --plan-approval off` or
-`/aidlc config set plan-approval off`, or say so in their own words ("skip plan
-approval for this work"), and the human-turn hook applies it. A CLI setter run
-without that turn refuses with:
+Only the person turns it off: they say so in their own words and the agent
+runs `config set plan-approval off` for them (recorded as set by you, with their
+words, and one line with the way back), or they type `/aidlc --plan-approval off`
+or `/aidlc config set plan-approval off` and the human-turn hook applies it. A
+CLI setter run when nobody has asked for it since the last decision refuses with:
 
-> Turning plan approval off lets code generation start without the person approving the plan, so only they can do it. Ask the user to type `/aidlc config set plan-approval off` themselves, or to say so in their own words; this command does not turn it off on its own.
+> Turning plan approval off lets code generation start without the person approving the plan, so only they turn it off. Nobody has asked for it in the chat since the last decision, so nothing changed: when the person asks for it, run this again and it is recorded as theirs.
 
 With memory holding strict, the refusal names the memory file instead. Said
 before the work exists (at the compose gate or the scope confirmation), the

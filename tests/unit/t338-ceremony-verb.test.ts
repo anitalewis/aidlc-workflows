@@ -533,7 +533,7 @@ describe("t338 atomic per-intent settings", () => {
 });
 
 describe("t338 summary confirmation off is the person's switch", () => {
-  const summaryRefusal = "Turning summary confirmation off skips the person's `Looks correct` check before a stage writes its output, so only they can do it. Ask the user to type `/aidlc config set summary-confirmation off` themselves; this command does not turn it off on its own.";
+  const summaryRefusal = "Turning summary confirmation off skips the person's `Looks correct` check before a stage writes its output, so only they turn it off. Nobody has asked for it in the chat since the last decision, so nothing changed: when the person asks for it, run this again and it is recorded as theirs.";
   /** No resolved session and no presence bypass, so only a typed turn can lower. */
   const SESSIONLESS = { ...FENCE_ENV_CLEAR, AIDLC_SESSION_OVERRIDE: undefined, AIDLC_SESSION_OVERRIDE_SOURCE: undefined };
 
@@ -557,7 +557,7 @@ describe("t338 summary confirmation off is the person's switch", () => {
       via: "a pair after another setting", scope: "feature", tool: DISPATCHER,
       args: ["engine", "config", "set", "sensors", "on", "--summary-confirmation", "off"],
     },
-  ])("an untyped off through $via asks for the person and changes nothing", ({ scope, tool, args }) => {
+  ])("an off nobody asked for, through $via, changes nothing", ({ scope, tool, args }) => {
     const { proj, state } = project(scope);
     const before = readFileSync(state, "utf-8");
     const refused = run(tool, args, proj, SESSIONLESS);
@@ -565,6 +565,26 @@ describe("t338 summary confirmation off is the person's switch", () => {
     expect(JSON.parse(refused.stderr)).toEqual({ error: summaryRefusal });
     expect(readFileSync(state, "utf-8")).toBe(before);
     expect(settingRows(proj)).toHaveLength(0);
+  });
+
+  test("asked for in the chat, the agent's off is the person's, with their words and the way back", () => {
+    const { proj, state } = project("feature");
+    recordHumanPrompt(proj, "skip the looks correct check from now on");
+    const changed = run(DISPATCHER, ["engine", "config", "set", "summary-confirmation", "off"], proj, SESSIONLESS);
+    expect(changed.status, changed.stderr).toBe(0);
+    expect(getField(readFileSync(state, "utf-8"), "Summary Confirmation")).toBe("off (set by you)");
+    const audit = rows(proj);
+    expect(auditBlockField(audit.at(-1)!.block, "Source")).toBe("you");
+    expect(auditBlockField(audit.at(-1)!.block, "Words")).toBe("skip the looks correct check from now on");
+    expect(changed.stdout).toContain(
+      'The summary confirmation is off for this piece of work, because you said: "skip the looks correct check from now on". ' +
+        'Say "turn it back on" to restore it (/aidlc config set summary-confirmation on).',
+    );
+    const unattended = project("feature");
+    recordHumanPrompt(unattended.proj, "skip the looks correct check from now on");
+    expect(run(UTILITY, ["config-change", "--summary-confirmation", "off"], unattended.proj, {
+      ...SESSIONLESS, AIDLC_UNATTENDED: "1",
+    }).status).toBe(1);
   });
 
   test("turning it on stays free for a command", () => {
