@@ -397,7 +397,7 @@ Stage files list **topic areas and example questions** — they are guidance, no
 - **Give each question one line of context** — why it is being asked or what depends on the answer — when the reason is not obvious from the prompt itself. "We found two conflicting retention values in the requirements (30 days vs 90 days); which governs?" beats "What is the retention period?".
 - **Prefer a concrete phrasing over an abstract one.** Ask about the actual decision in the user's domain terms, not the framework's internal vocabulary. If you would need to explain the question when asked to rephrase it, phrase it that clear way the first time.
 
-**Step 2: Offer the user a choice of interaction mode:**
+**Step 2: Offer the user a choice of interaction mode.** Show this question and wait for the person's pick, even when one mode looks obvious: never pick a mode and record it as theirs.
 ```question
 prompt: "I've created [N] questions at `[file path]`. How would you like to answer them?"
 header: Questions
