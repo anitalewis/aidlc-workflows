@@ -366,6 +366,9 @@ describe("t181 per-harness conductor-SKILL freshness gate (P11 RESOLVE-2)", () =
         "a person must type the exact policy switch",
         "The key is the person's typed switch.",
         "The CLI setters do not lower fences from chat",
+        "CLI setters do not lower from chat on their own",
+        "needs the person's typed switch, like a fence",
+        "refuse any\nexplicit lowering from `you` unless it is a no-op",
       ]) {
         if (body.includes(stale)) problems.push(`${rel}  still says: ${stale}`);
       }

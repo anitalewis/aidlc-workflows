@@ -707,8 +707,9 @@ lookup; hooks run on Windows too, so every harness that forwards the prompt
 supports this path.
 
 After the memory-strict check, `config-change` and `scope-change` refuse any
-explicit lowering from `you` unless it is a no-op or `fenceKeyBypassed` allows
-the fixture or harness-launch presence bypass.
+explicit lowering from `you` unless a person's chat turn since the last decision
+stands behind it (never on an unattended driver), it is a no-op, or
+`fenceKeyBypassed` allows the fixture or harness-launch presence bypass.
 A fence already off for this work and a policy word already equal to the
 current line with source `you` need no key.
 Direct `intent create --guard-policy relaxed|off` from chat is refused when the
@@ -755,7 +756,7 @@ Typing `guard policy relaxed|off` applies the choice through the human-turn
 hook immediately; `guard policy strict` runs the strict setter through the
 conductor, and either policy write removes the retired line and stops the notice.
 
-Ceremony settings control sensors, learnings, and consolidated-summary confirmation independently. Every shipped scope declares all three explicitly: `classic` sets sensors and learnings to `on` and summary confirmation to `off`, `bugfix` sets sensors to `on` and learnings and summary confirmation to `off`, `express` sets all three to `off`, and the other eight set all three to `on`. A scope file that omits a key still falls back to `on`. An explicit setting writes `<value> (set by you)` to the selected intent when the person typed it and `<value> (set by a command)` when the agent or a script ran it. Turning summary confirmation off on a running piece of work needs the person's typed switch, like a fence. `summary_confirmation: off` skips only the consolidated-summary "Looks correct" checkpoint declared by stage frontmatter; intent-capture's separate Assumption Confirmation decision remains. Turning a ceremony off does not remove lifecycle hooks or the autonomous single pre-merge reviewer.
+Ceremony settings control sensors, learnings, and consolidated-summary confirmation independently. Every shipped scope declares all three explicitly: `classic` sets sensors and learnings to `on` and summary confirmation to `off`, `bugfix` sets sensors to `on` and learnings and summary confirmation to `off`, `express` sets all three to `off`, and the other eight set all three to `on`. A scope file that omits a key still falls back to `on`. An explicit setting writes `<value> (set by you)` to the selected intent when the person typed it or asked for it in the chat, and `<value> (set by a command)` when the agent or a script ran it on its own. Turning summary confirmation off on a running piece of work needs the person, like a fence: their typed switch or their request in the chat. `summary_confirmation: off` skips only the consolidated-summary "Looks correct" checkpoint declared by stage frontmatter; intent-capture's separate Assumption Confirmation decision remains. Turning a ceremony off does not remove lifecycle hooks or the autonomous single pre-merge reviewer.
 
 Ceremony precedence is environment kill switch (`1`) → valid per-intent field
 → scope default → `on`. A kill switch never rewrites the saved override. An
