@@ -475,7 +475,7 @@ Every action a guard sees is classified before anything is decided. Is it covere
 
 The question is never who is typing. A developer agent acts on the conductor's word and the conductor acts on yours, so authority flows down the chain: when the conductor dispatches an agent, the authority in force at that moment is stamped on the dispatch and the agent inherits it. An agent can never mint a grant for itself, and an unreadable signal narrows what is covered rather than widening it. The signals are ones the framework already keeps: the turn markers under `.aidlc-engine/` that record your last prompt against the workflow's last advancing command, the counters on the active-directive marker, and the dispatch stamp on the in-flight agent ledger.
 
-This classification never lowers a fence or substitutes for the person's typed switch. Its job is the evidence trail: every time a lowered fence lets something through, the audit row names the authority in force, so a reader can see who was working when it happened. A changed input under `strict` is asked about at the governed boundary regardless of this classification.
+This classification never lowers a fence or substitutes for the person's own switch, typed or asked for in the chat. Its job is the evidence trail: every time a lowered fence lets something through, the audit row names the authority in force, so a reader can see who was working when it happened. A changed input under `strict` is asked about at the governed boundary regardless of this classification.
 
 ### What you see when a guard decides
 

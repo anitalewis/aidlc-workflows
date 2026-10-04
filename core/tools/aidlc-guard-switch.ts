@@ -382,8 +382,10 @@ export function applyIntentSettings(
   }
   const askedWords = askedInChat ? latestPersonTurn(projectDir)?.words ?? null : null;
   const lowered = (key: GuardSwitch["key"]): boolean => askedInChat && lowering.some((item) => item.key === key);
+  // The audit row keeps the words as the host delivered them; only the line
+  // the person reads is shortened.
   const wordsField = (key: GuardSwitch["key"]): Record<string, string> =>
-    lowered(key) && askedWords ? { Words: quoted(askedWords) } : {};
+    lowered(key) && askedWords ? { Words: askedWords } : {};
 
   const audit: AuditEntryInput[] = [];
   const lines: string[] = [];
@@ -682,10 +684,10 @@ export function resolvePlanApprovalSetting(
   selection: { intent?: string; space?: string; sessionId?: string } = {},
 ): PlanApprovalSetting {
   const env = planApprovalEnv(projectDir, selection.sessionId ?? null);
-  const resolution = resolveCeremony("plan_approval", getField(stateContent ?? "", "Scope"), stateContent, env);
+  const resolution = resolveCeremony("plan_approval", getField(stateContent ?? "", "Scope"), stateContent, env, projectDir);
   // The machine switch is read from the environment or the settings files
   // themselves, never from saved state text.
-  if (isKillSwitchSource(resolution.source) && resolveProjectFlag(CEREMONY_ENV.plan_approval, env) === "1") {
+  if (isKillSwitchSource(resolution.source) && resolveProjectFlag(CEREMONY_ENV.plan_approval, env, projectDir) === "1") {
     return { value: "off", source: resolution.source };
   }
   // The source is repeated to the person word for word, so only the forms the
@@ -710,8 +712,9 @@ export function resolvePlanApprovalSetting(
 
 /**
  * The environment plan approval resolves against. The machine switch counts
- * when the harness launched with it or it is recorded in settings; a command
- * that sets it for itself is read as unset.
+ * when the harness launched with it; a command that sets it for itself is read
+ * as unset. A switch recorded in settings is read from its file by the
+ * resolver, which names that file.
  */
 export function planApprovalEnv(projectDir: string, sessionId: string | null): NodeJS.ProcessEnv {
   let session = sessionId;
@@ -726,8 +729,6 @@ export function planApprovalEnv(projectDir: string, sessionId: string | null): N
   const env: NodeJS.ProcessEnv = { ...process.env };
   // A value other than 1 can only keep the stop, so it stands as given.
   if (env[name] === "1" && !planApprovalMachineSwitchTrusted(projectDir, session)) delete env[name];
-  // Recorded with `config flags --bypass` for this project.
-  if (env[name] === undefined && resolveProjectFlag(name, {}, projectDir) === "1") env[name] = "1";
   return env;
 }
 

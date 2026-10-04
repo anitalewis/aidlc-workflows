@@ -351,6 +351,25 @@ describe("t181 per-harness conductor-SKILL freshness gate (P11 RESOLVE-2)", () =
         if (body.includes(stale)) problems.push(`${rel}  still says: ${stale}`);
       }
     }
+    // The docs describe the same route: a chat request is the person's too.
+    for (const rel of [
+      "docs/guide/12-cli-commands.md",
+      "docs/guide/13-customization.md",
+      "docs/guide/glossary.md",
+      "docs/harness-engineering/05-rules-and-the-loop.md",
+      "docs/reference/06-hooks-and-tools.md",
+      "docs/reference/12-state-machine.md",
+    ]) {
+      const body = readFileSync(join(REPO_ROOT, rel), "utf-8");
+      for (const stale of [
+        "have the person type the switch",
+        "a person must type the exact policy switch",
+        "The key is the person's typed switch.",
+        "The CLI setters do not lower fences from chat",
+      ]) {
+        if (body.includes(stale)) problems.push(`${rel}  still says: ${stale}`);
+      }
+    }
     expect(problems).toEqual([]);
   });
 

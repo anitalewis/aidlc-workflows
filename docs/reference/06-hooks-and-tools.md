@@ -643,11 +643,12 @@ MINT a grant for itself.
 | fence, key on | hold | hold | hold |
 | fence, lowered | stand aside | stand aside | stand aside |
 
-**The key is the person's typed switch.** Neither row reads
+**The key is the person's own switch.** Neither row reads
 conversational authority: a fence stands aside exactly when the policy word,
 per-work switch, or environment kill switch lowered it.
-The human-turn hook applies the exact switch at prompt time; a selected remedy
-or generic grant changes nothing.
+The human-turn hook applies a typed switch at prompt time, and the setter
+applies one the person asked for in the chat once their turn since the last
+decision stands behind it; a selected remedy or generic grant changes nothing.
 A reply such as "write the code now" or "yes, option 2" to an unrelated question
 does not lower a fence, even if it arrived after the engine's last directive.
 
@@ -659,7 +660,8 @@ The instruction covers the work it asks for, including the approval still pendin
 inside it; it does not cover the loop skipping one of its own steps.
 
 For the three switchable fences, the human turns the key by typing the switch
-the hook applies, unless a memory layer holds Guard Policy strict. A fence that
+the hook applies or by asking for it in the chat, unless a memory layer holds
+Guard Policy strict. A fence that
 holds puts an available switch in front of the person who met it, in whichever
 shape that refusal has: `review-freeze` builds a typed refusal with `fence` set,
 so `evaluateGuardRefusal` appends `lowerFenceRemedy` (`op: "lower-fence"`) as a
@@ -685,7 +687,7 @@ Conversational authority is therefore consumed by the evidence trail alone: no
 row of the table reads it, and every `GUARD_STOOD_ASIDE` row still carries the
 `Authority`, `Grant`, and `Actor` in force, so a reader can see who was working
 when a lowered fence let something through. That classification does not replace
-the person's typed switch applied by the human-turn hook. Only a fence's
+the person's own switch, typed or asked for in the chat. Only a fence's
 supported per-work switch, policy word, or environment kill switch changes its
 effective setting.
 
@@ -1824,7 +1826,7 @@ path for a framework command.
 | `version` | Print the framework version | — |
 | `status` | Read-only status check from `aidlc-state.md`. Surfaces `[?]` / `[R]` gate awareness; team mode appends the pure Team Construction snapshot. | — |
 | `doctor` | Health check: verify hooks, prerequisites, file structure, Kiro IDE ignore sources that hide `.kiro/`, plus local-only team claim stamp/activity/orphan-ref reconciliation (never fetches or releases). | `HEALTH_CHECKED` |
-| `intent-create` | Create a new intent and run the three deterministic Initialization stages. `--space <name>` creates under an existing space and reads that space's memory; `--intent` is refused. Explicit `--guard-policy relaxed\|off` from chat is refused when it differs from the selected scope's default: create the piece of work, then have the person type the switch. Naming the scope's own default is recorded as the scope's value; scope defaults apply without asking. Only `fenceKeyBypassed` permits CLI lowering through the fixture/harness-launch presence bypass, after memory-strict and unattended checks. `--skip <slug,...>` / `--add <slug,...>` apply a composed plan's own stage changes to the scope's grid at creation, written as the state file's EXECUTE/SKIP suffixes with a `Plan: custom, based on <scope>` field; an unknown slug, an initialization stage, a stage on both lists, or a change the scope already makes is refused before any mutation. | `WORKFLOW_STARTED`, `PHASE_STARTED`, `PHASE_SKIPPED`, `STAGE_STARTED`, `STAGE_COMPLETED`, `WORKSPACE_*`, and the init-to-first-post-init phase hand-off events |
+| `intent-create` | Create a new intent and run the three deterministic Initialization stages. `--space <name>` creates under an existing space and reads that space's memory; `--intent` is refused. Explicit `--guard-policy relaxed\|off` from chat is refused when it differs from the selected scope's default: create the piece of work, then set it once the person asks for it, recorded as theirs. Naming the scope's own default is recorded as the scope's value; scope defaults apply without asking. Only `fenceKeyBypassed` permits CLI lowering through the fixture/harness-launch presence bypass, after memory-strict and unattended checks. `--skip <slug,...>` / `--add <slug,...>` apply a composed plan's own stage changes to the scope's grid at creation, written as the state file's EXECUTE/SKIP suffixes with a `Plan: custom, based on <scope>` field; an unknown slug, an initialization stage, a stage on both lists, or a change the scope already makes is refused before any mutation. | `WORKFLOW_STARTED`, `PHASE_STARTED`, `PHASE_SKIPPED`, `STAGE_STARTED`, `STAGE_COMPLETED`, `WORKSPACE_*`, and the init-to-first-post-init phase hand-off events |
 | `init` | Transition error only in this release; start work by describing what to build so the engine routes to `intent-create`. | none |
 | `intent [name]` | List intents (`--json`; `--all` includes archived) or switch the active-intent cursor. Normally routed from `/aidlc intent [name]`. | — |
 | `intent archive <name> [--reason <text>]` | Retire an in-flight or completed intent: registry row `archived`, state `Status: Archived` (prior Status kept in `Archived From`), record dir, audit shards, and Bolt worktrees preserved, default listing hides it. Normally routed from `/aidlc intent archive <name>`. | `WORKFLOW_ARCHIVED` |
@@ -1884,8 +1886,8 @@ A memory layer's `Mode: strict` refuses an explicit `--guard-policy relaxed` or
 scope change, and names the memory file. Explicit strict and unrelated settings
 remain allowed. `review adversarial` stores an empty `Review Override`; explicit
 Guard Policy choices store `<value> (set by you)`; a ceremony choice stores
-`<value> (set by you)` when the hook applies the person's typed switch and
-`<value> (set by a command)` otherwise, never relabeling an identical
+`<value> (set by you)` when the hook applies the person's typed switch or the
+setter runs on their chat request, and `<value> (set by a command)` otherwise, never relabeling an identical
 `set by you` line; and a fence switch stores the `Guards Off` or `Guards On` line. An `on` override can raise a
 policy-lowered fence and records `GUARD_RESTORED`. Scope defaults retain their
 scope source, and a same-value change of source is still a recorded change.

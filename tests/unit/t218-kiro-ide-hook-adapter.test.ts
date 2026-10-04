@@ -1313,7 +1313,8 @@ describe("t218 Kiro IDE hook adapter (USER_PROMPT env context)", () => {
       expect(before).toMatch(/^Plan Approval: on/);
       const bypass = run(named.split(" "));
       expect(bypass.status, bypass.stdout + bypass.stderr).toBe(0);
-      expect(planLine()).toBe("Plan Approval: off (from env AIDLC_DISABLE_PLAN_APPROVAL_GUARD)");
+      // The switch is recorded in the settings file, so it is named by that file.
+      expect(planLine()).toBe("Plan Approval: off (from AIDLC_DISABLE_PLAN_APPROVAL_GUARD in aidlc.settings.local.json)");
       const cleared = run(named.replace("--bypass", "--clear-bypass").split(" "));
       expect(cleared.status, cleared.stdout + cleared.stderr).toBe(0);
       expect(planLine()).toBe(before);

@@ -24,6 +24,7 @@ import {
   delegatedWorktreeIntent,
   isoTimestamp,
   latestPersonTurn,
+  memoryGuardPolicyDeclarations,
   normalizeDriveLetter,
   personSpokeSinceGate,
   readRegularFileNoFollowOrThrow,
@@ -331,7 +332,10 @@ function heldOffByWork(projectDir: string, name: RecordableProjectBypass): { sou
     for (const key of ["plan_approval", "summary_confirmation"] as const) {
       if (CEREMONY_ENV[key] !== name) continue;
       const resolved = resolveCeremony(key, getField(state, "Scope"), state);
-      return resolved.value === "off" ? { source: resolved.source, key: key.replace("_", "-") } : null;
+      if (resolved.value !== "off") return null;
+      // Guard Policy strict in memory keeps plan approval on whatever the work says.
+      if (key === "plan_approval" && memoryGuardPolicyDeclarations(projectDir).some((item) => item.value === "strict")) return null;
+      return { source: resolved.source, key: key.replace("_", "-") };
     }
   } catch {
     // Unreadable work state keeps the plain line.

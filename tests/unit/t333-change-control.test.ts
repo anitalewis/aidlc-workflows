@@ -2006,15 +2006,16 @@ describe("t333 (9) fences: the policy lowers a fixed set; per-run switches can l
     },
   ])("a CLI $operation lowers once the person asked for it in the chat", ({ args, event, line, undo }) => {
     const { proj, state } = project("enterprise");
-    const asked = "please stop re-checking the  state transitions for this work";
+    const asked = 'please stop re-checking the  "state" transitions for this work';
     recordHumanPrompt(proj, asked);
     const applied = run(UTILITY, args, proj, FENCE_ENV_CLEAR);
     expect(applied.status, applied.stderr).toBe(0);
-    expect(applied.stdout).toContain(`${line} "please stop re-checking the state transitions for this work". ${undo}`);
+    expect(applied.stdout).toContain(`${line} "please stop re-checking the 'state' transitions for this work". ${undo}`);
     const rows = rowsOf(proj, event);
     expect(rows).toHaveLength(1);
     expect(auditBlockField(rows[0].block, "Source")).toBe("you");
-    expect(auditBlockField(rows[0].block, "Words")).toBe("please stop re-checking the state transitions for this work");
+    // The audit row keeps the words exactly as delivered; only the line is shortened.
+    expect(auditBlockField(rows[0].block, "Words")).toBe(asked);
     const updated = readFileSync(state, "utf-8");
     expect(updated).toMatch(event === "GUARD_POLICY_SET" ? /Guard Policy\*\*: relaxed \(set by you\)/ : /Guards Off\*\*: state-transition \(set by you\)/);
     // The turn is the person's for this request only: an unattended driver never lowers.

@@ -682,7 +682,8 @@ follow the new scope under memory policy, which controls the effective Guard
 Policy. Changed stored values or sources are audited with scope provenance;
 explicit overrides and absent legacy rows are preserved. Explicit Guard
 Policy flags store `<value> (set by you)`; ceremony flags store it when the
-person typed the switch and `<value> (set by a command)` otherwise.
+person typed the switch or asked for it in the chat, and `<value> (set by a
+command)` otherwise.
 A same-value source change still counts as a change; `review adversarial`
 clears `Review Override` to an empty string.
 
@@ -1412,9 +1413,9 @@ The conductor must obtain human consent before aborting a Bolt. This
 conductor-prose-obtained consent remains the abort trust boundary. The Plan
 Approval hook's exact abort and fence-switch exceptions preserve source/native
 trusted-tool parity; they do not themselves authenticate consent. The fence
-setter still refuses lowering except for a no-op or the fixture/harness-launch
-presence bypass; only the person's typed prompt makes the human-turn hook
-apply the switch. A mistaken abort with the unchanged `--discard` argv now parks
+setter still refuses lowering except for a no-op, a person's chat turn since
+the last decision, or the fixture/harness-launch presence bypass; only the
+person's typed prompt makes the human-turn hook apply the switch itself. A mistaken abort with the unchanged `--discard` argv now parks
 available files and review evidence rather than irretrievably deleting them.
 With a restorable descriptor, the
 returned `restore_operation` selects the exact saved slug, stamp, and repository,

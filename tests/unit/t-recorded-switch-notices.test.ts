@@ -323,6 +323,24 @@ describe("a check switched off for the project is always said, never refused", (
     expect(cleared.stdout).not.toContain("is on again");
   });
 
+  test("a recorded plan approval switch is named by its file, and a strict memory lock makes the clear say it is on", () => {
+    const proj = installedProject();
+    const PLAN = "AIDLC_DISABLE_PLAN_APPROVAL_GUARD";
+    expect(flags(proj, "--bypass", PLAN, "--local", "--yes").status).toBe(0);
+    const got = dispatch(proj, ["engine", "config", "get", "plan-approval"]);
+    expect(got.stdout.trim(), got.stderr).toBe(`off (from ${PLAN} in aidlc.settings.local.json)`);
+    // The work says plan approval off, but Guard Policy strict in memory keeps it on.
+    const state = stateFilePath(proj);
+    writeFileSync(state, `${readFileSync(state, "utf-8").trimEnd()}\n- **Plan Approval**: off (set by you)\n`);
+    const memory = join(proj, "aidlc", "spaces", "default", "memory");
+    mkdirSync(memory, { recursive: true });
+    writeFileSync(join(memory, "project.md"), "# Project\n\n## Guard Policy\n\nMode: strict\n");
+    const cleared = flags(proj, "--clear-bypass", PLAN, "--yes");
+    expect(cleared.status, cleared.stderr).toBe(0);
+    expect(cleared.stdout).toContain("The plan approval check is on again for this project.");
+    expect(cleared.stdout).not.toContain("stays off for this piece of work");
+  });
+
   test("off, on, and off again by editing the file is two changes, each said once", () => {
     const proj = project();
     writeLocal(proj, [NAME]);

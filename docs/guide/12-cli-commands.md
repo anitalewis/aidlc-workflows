@@ -1358,7 +1358,8 @@ Both forms accept `--intent <name>` and `--space <name>`; omitted selectors use
 the hook payload session's workflow selection.
 A nonexistent named intent is refused, and a selection without a state file
 must be created before the person types the switch again.
-The CLI setters do not lower fences from chat on their own; an already-off
+The CLI setters lower a fence only when a person's chat turn since the last
+decision stands behind them, never on an unattended driver; an already-off
 fence is a no-op and needs no key.
 Hooks run on Windows too, so every harness that forwards the prompt supports
 the typed switch without a setter-side session lookup.
@@ -1435,12 +1436,14 @@ and do not enforce this scope comparison.
 
 An explicit ceremony setting writes `<value> (set by a command)` to the
 corresponding state line, or `<value> (set by you)` when the human-turn hook
-applies the person's typed switch, and adds a `CEREMONY_SET` row to the shared
+applies the person's typed switch or the setter runs on their chat request, and
+adds a `CEREMONY_SET` row to the shared
 audit batch with `Key`, `Old`, `New`, and `Source`.
 `Old` is the previously saved value (raw text if invalid; the scope default
 when no line existed), not a value forced off by an environment kill switch.
 The audit keys are `sensors`, `learnings`, and `summary_confirmation`; a command
-records `Source: command` and the person's typed switch records `Source: you`.
+records `Source: command`, and the person's switch, typed or asked for in the
+chat, records `Source: you` (a chat request adds their `Words`).
 A command that repeats the person's own choice is a no-op and keeps `set by
 you`. A creation flag such as `intent-create --learnings off` also records
 `set by a command`. The saved override is committed with the intent
@@ -1466,9 +1469,9 @@ it since the last decision refuses with:
 An off already saved as an explicit choice is a no-op. A scope-owned off (for
 example `off (from scope classic)`) still needs the person, because saving it
 as explicit would outlive a later scope change. Turning it `on`, a scope's own
-default, and a creation flag need no typed turn. A composer suggestion to turn
-it off gets the same refusal when applied, so the person types the switch after
-approving it. As for fences, `AIDLC_UNATTENDED=1` refuses the change and only
+default, and a creation flag need no turn from the person. A composer
+suggestion to turn it off gets the same refusal when applied, so it is turned
+off once the person asks for it after approving. As for fences, `AIDLC_UNATTENDED=1` refuses the change and only
 the fixture or harness-launch presence bypass permits it without the person.
 
 The configuration commands expose these same three keys alongside depth, test

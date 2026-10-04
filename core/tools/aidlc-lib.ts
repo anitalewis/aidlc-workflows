@@ -35041,6 +35041,8 @@ export function resolveCeremony(
   stateContent: string | null | undefined,
   // Plan approval passes an environment without an untrusted machine switch.
   env: NodeJS.ProcessEnv = process.env,
+  // An explicit project's recorded switch, named by its file.
+  projectDir?: string,
 ): CeremonyResolution {
   const scopeName = scope?.trim().toLowerCase();
   let declared: CeremonySetting | undefined;
@@ -35052,12 +35054,12 @@ export function resolveCeremony(
   const scopeDefault = declared ?? "on";
   const rawStateValue = getField(stateContent ?? "", CEREMONY_FIELDS[key]);
   const intent = parseCeremonyStateLine(rawStateValue);
-  const disabled = resolveProjectFlag(CEREMONY_ENV[key], env) === "1";
+  const disabled = resolveProjectFlag(CEREMONY_ENV[key], env, projectDir) === "1";
   return {
     key,
     value: disabled ? "off" : intent?.value ?? scopeDefault,
     source: disabled
-      ? killSwitchSource(CEREMONY_ENV[key], env)
+      ? killSwitchSource(CEREMONY_ENV[key], env, projectDir)
       : intent?.source ?? (declared === undefined ? "default" : `scope ${scopeName}`),
     scopeDefault,
     intent,

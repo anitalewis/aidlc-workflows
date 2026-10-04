@@ -2765,7 +2765,7 @@ function effectiveScopeCostSummary(
   const policy = {} as CeremonyPolicy;
   for (const key of CEREMONY_KEYS) {
     const base = key === "plan_approval"
-      ? resolveCeremony(key, scope, null, planApprovalEnv(projectDir, null))
+      ? resolveCeremony(key, scope, null, planApprovalEnv(projectDir, null), projectDir)
       : resolveCeremony(key, scope, null);
     policy[key] = isKillSwitchSource(base.source) ? "off" : overrides?.[key] ?? base.value;
   }
