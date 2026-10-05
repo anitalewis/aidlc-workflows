@@ -7258,7 +7258,11 @@ function routeNext(args: string[], projectDir: string | undefined): void {
     });
     return;
   }
-  if (!validScopes().has(scope) && !retiredScopeOfFinishedWork) {
+  // Open work on such a scope keeps the error for every move on it, but a
+  // --new-intent beside it (Branch 4a) never routes through that scope, so it
+  // starts as it would beside any open work.
+  const newWorkBesideIt = flags.newIntent && !composesInFlight;
+  if (!validScopes().has(scope) && !retiredScopeOfFinishedWork && !newWorkBesideIt) {
     // Naming a real scope for a workflow whose saved scope this install does
     // not know switches the workflow to it, with any settings and plan changes
     // typed alongside, as Branch 5 does. New work is not a switch.
