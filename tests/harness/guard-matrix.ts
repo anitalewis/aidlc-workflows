@@ -465,7 +465,9 @@ export function recordProblems(c: CellRun): string[] {
   const seen = new Map<string, number>();
   for (const e of rows) seen.set(where(e), (seen.get(where(e)) ?? 0) + 1);
   for (const [at, n] of seen) if (n > 1) problems.push(`one change, ${n} CHANGE_ACCEPTED rows at ${at}`);
-  for (const e of rows.filter((e) => field(e.block, "Changed") === "(paths unavailable)")) {
+  // With no review there is no source snapshot to name paths from; the row
+  // may say so, and the person's line names the Unit instead.
+  for (const e of rows.filter((e) => c.cell.review !== "none" && field(e.block, "Changed") === "(paths unavailable)")) {
     problems.push(`CHANGE_ACCEPTED at ${where(e)} names no changed path`);
   }
   if (lines.length > seen.size) problems.push(`${lines.length} change lines for ${seen.size} changed pieces of work: ${JSON.stringify(lines).slice(0, 400)}`);
