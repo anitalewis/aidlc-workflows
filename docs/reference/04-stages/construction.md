@@ -44,7 +44,8 @@ They complete one Unit's applicable design and source-producing stages before
 the next. Preserve an explicit stage-major choice. Design-only and no-Unit
 workflows retain their existing stage flow; team-owned work uses `unit_gate`.
 Existing workflows without the checkpoint setting keep the legacy first-stage
-review and late per-stage gate cascade.
+review; their late stage approvals, like those of work with checkpoints off, come
+as one question.
 
 For eligible checkpoint work with skeleton-on, the first DAG Unit is the
 smallest working integrated slice. It completes its applicable stages, including

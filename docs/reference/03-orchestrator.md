@@ -540,7 +540,8 @@ applicable per-unit stages, including Code Generation, before the next Unit.
 Runtime order comes from `unit-of-work-dependency.md`; `bolt-plan.md` records
 delivery intent rather than replacing the DAG. Preserve an explicit stage-major
 choice. Legacy workflows without the checkpoint field retain the first-stage
-review and late per-stage cascade; team-owned `unit_gate` uses its own policy.
+review, and their late stage approvals come as one question (`approve_together`);
+team-owned `unit_gate` uses its own policy.
 Design-only, zero-Unit, and isolated runs do not gain a checkpoint ceremony.
 
 When skeleton-on applies, the first DAG Unit must be planned as the smallest
