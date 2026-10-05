@@ -8,10 +8,8 @@
 
 import { guardMatrixSuite } from "../harness/guard-matrix.ts";
 
-const BLOCK_1 = "a checkpoint wants a fresh review under Guard Policy off or relaxed, and the review cap refuses it";
-
 guardMatrixSuite("the person reverts an approved Unit's commit", [
-  { cell: { policy: "off", review: "advisory", plan: "on" }, change: "revert", blocked: BLOCK_1 },
-  { cell: { policy: "relaxed", review: "advisory", plan: "on" }, change: "revert", blocked: BLOCK_1 },
+  { cell: { policy: "off", review: "advisory", plan: "on" }, change: "revert" },
+  { cell: { policy: "relaxed", review: "advisory", plan: "on" }, change: "revert" },
   { cell: { policy: "strict", review: "advisory", plan: "on" }, change: "revert" },
 ]);

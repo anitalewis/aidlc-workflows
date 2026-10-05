@@ -8,13 +8,10 @@
 
 import { guardMatrixSuite } from "../harness/guard-matrix.ts";
 
-const BLOCK_1 = "a checkpoint wants a fresh review under Guard Policy off or relaxed, and the review cap refuses it";
-const BLOCK_4 = "the second Unit's own files record a change to the first Unit's reviewed source, naming no path";
-
 guardMatrixSuite("the person hand-edits an approved file", [
-  { cell: { policy: "off", review: "advisory", plan: "on" }, change: "hand-edit-source", blocked: BLOCK_1 },
-  { cell: { policy: "relaxed", review: "advisory", plan: "on" }, change: "hand-edit-source", blocked: BLOCK_1 },
+  { cell: { policy: "off", review: "advisory", plan: "on" }, change: "hand-edit-source" },
+  { cell: { policy: "relaxed", review: "advisory", plan: "on" }, change: "hand-edit-source" },
   { cell: { policy: "strict", review: "advisory", plan: "on" }, change: "hand-edit-source" },
-  { cell: { policy: "off", review: "advisory", plan: "on" }, change: "hand-edit-requirements", recordBlocked: BLOCK_4 },
+  { cell: { policy: "off", review: "advisory", plan: "on" }, change: "hand-edit-requirements" },
   { cell: { policy: "strict", review: "advisory", plan: "on" }, change: "hand-edit-requirements" },
 ]);

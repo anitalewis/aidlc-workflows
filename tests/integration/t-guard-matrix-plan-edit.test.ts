@@ -8,10 +8,8 @@
 
 import { guardMatrixSuite } from "../harness/guard-matrix.ts";
 
-const BLOCK_4 = "the second Unit's own files record a change to the first Unit's reviewed source, naming no path";
-
 guardMatrixSuite("the person edits the plan while its approval waits", [
-  { cell: { policy: "off", review: "advisory", plan: "on" }, change: "plan-edit", recordBlocked: BLOCK_4 },
-  { cell: { policy: "relaxed", review: "advisory", plan: "on" }, change: "plan-edit", recordBlocked: BLOCK_4 },
+  { cell: { policy: "off", review: "advisory", plan: "on" }, change: "plan-edit" },
+  { cell: { policy: "relaxed", review: "advisory", plan: "on" }, change: "plan-edit" },
   { cell: { policy: "strict", review: "advisory", plan: "on" }, change: "plan-edit" },
 ]);

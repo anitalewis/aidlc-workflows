@@ -9,10 +9,7 @@
 
 import { guardMatrixSuite } from "../harness/guard-matrix.ts";
 
-const BLOCK_1 = "a checkpoint wants a fresh review under Guard Policy off or relaxed, and the review cap refuses it";
-const BLOCK_4 = "the second Unit's own files record a change to the first Unit's reviewed source, naming no path";
-
 guardMatrixSuite("classic as it ships, two Units", [
-  { cell: { policy: "off", review: "advisory", plan: "on" }, change: "later-unit-edit", options: { shipped: true }, label: "classic as it ships", recordBlocked: BLOCK_4 },
-  { cell: { policy: "off", review: "advisory", plan: "on" }, change: "later-unit-edit-unclaimed", options: { shipped: true }, label: "classic as it ships", blocked: BLOCK_1 },
+  { cell: { policy: "off", review: "advisory", plan: "on" }, change: "later-unit-edit", options: { shipped: true }, label: "classic as it ships" },
+  { cell: { policy: "off", review: "advisory", plan: "on" }, change: "later-unit-edit-unclaimed", options: { shipped: true }, label: "classic as it ships" },
 ]);

@@ -17,7 +17,7 @@ guardMatrixSuite("a plugin's scope that names no Guard Policy", [
   { cell: { policy: "strict", review: "advisory", plan: "on" }, change: "second-review", options: { composed: pluginCell("team-flow", null, "advisory") }, label: "on a plugin's scope that names no Guard Policy" },
 ]);
 
-test.todo("a plugin scope with no guard_policy key runs with Guard Policy off (blocked by: an absent key resolves strict)", () => {
+test("a plugin scope with no guard_policy key runs with Guard Policy off", () => {
   const run = runCell({ policy: "off", review: "advisory", plan: "on" }, "none", { composed: pluginCell("team-flow", null, "advisory") });
   expect(resolvedPolicy(run)).toBe("off");
 }, SCOPE_RUN_TIMEOUT_MS);

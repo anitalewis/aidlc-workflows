@@ -8,9 +8,7 @@
 
 import { guardMatrixSuite } from "../harness/guard-matrix.ts";
 
-const BLOCK_4 = "the second Unit's own files record a change to the first Unit's reviewed source, naming no path";
-
 guardMatrixSuite("resume after the engine version changes", [
-  { cell: { policy: "off", review: "advisory", plan: "on" }, change: "engine-update", recordBlocked: BLOCK_4 },
+  { cell: { policy: "off", review: "advisory", plan: "on" }, change: "engine-update" },
   { cell: { policy: "strict", review: "advisory", plan: "on" }, change: "engine-update" },
 ]);

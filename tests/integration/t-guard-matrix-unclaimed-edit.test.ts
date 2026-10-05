@@ -8,9 +8,7 @@
 
 import { guardMatrixSuite } from "../harness/guard-matrix.ts";
 
-const BLOCK_1 = "a checkpoint wants a fresh review under Guard Policy off or relaxed, and the review cap refuses it";
-
 guardMatrixSuite("a later Unit edits an approved Unit's file without claiming it", [
-  { cell: { policy: "off", review: "advisory", plan: "on" }, change: "later-unit-edit-unclaimed", blocked: BLOCK_1 },
+  { cell: { policy: "off", review: "advisory", plan: "on" }, change: "later-unit-edit-unclaimed" },
   { cell: { policy: "strict", review: "advisory", plan: "on" }, change: "later-unit-edit-unclaimed" },
 ]);

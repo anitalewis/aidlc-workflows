@@ -8,13 +8,11 @@
 
 import { guardMatrixSuite } from "../harness/guard-matrix.ts";
 
-const BLOCK_2 = "the review cap refuses a second review the person asks for under Guard Policy off";
-const BLOCK_4 = "the second Unit's own files record a change to the first Unit's reviewed source, naming no path";
 const BLOCK_5 = "the plan-approval guard holds the review the person asks for while a code plan waits";
 
 guardMatrixSuite("the person asks for a second review after one cycle", [
-  { cell: { policy: "off", review: "advisory", plan: "on" }, change: "second-review", blocked: BLOCK_2 },
-  { cell: { policy: "off", review: "adversarial", plan: "on" }, change: "second-review", recordBlocked: BLOCK_4 },
+  { cell: { policy: "off", review: "advisory", plan: "on" }, change: "second-review" },
+  { cell: { policy: "off", review: "adversarial", plan: "on" }, change: "second-review" },
   { cell: { policy: "strict", review: "advisory", plan: "on" }, change: "second-review" },
   { cell: { policy: "strict", review: "adversarial", plan: "on" }, change: "second-review" },
   { cell: { policy: "strict", review: "advisory", plan: "on" }, change: "review-while-plan-waits", blocked: BLOCK_5 },
