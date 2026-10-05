@@ -1578,10 +1578,8 @@ describe("t181 per-harness conductor-SKILL freshness gate (P11 RESOLVE-2)", () =
       join(REPO_ROOT, "core/aidlc-common/protocols/stage-protocol-recovery.md"),
       "utf-8",
     );
-    // The line says where the work picks up, so it never stands alone.
-    expect(recovery).toContain(
-      '**SAY:** "Picking up where we left off, at [where the work is, in plain words, such as Unit 2\'s approval]. If you\'d rather redo it, go back to another stage, or start fresh, just say so."',
-    );
+    // The engine says where the work picks up, on the first step's narration.
+    expect(recovery).toContain("carries the pick-up line in its `narration`");
     expect(recovery).not.toContain("Say redo, jump to a stage, or start fresh");
     expect(recovery).toContain("--choice <redo|jump|fresh>`");
     expect(recovery).toContain("at an approval gate too");

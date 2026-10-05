@@ -1113,6 +1113,18 @@ describe("t352 the lines the person must hear ride the next step the agent speak
     expect(String(nextIn(proj).narration ?? "")).not.toContain("Project type is now");
   });
 
+  // Live runs on Claude Code and Kiro left the protocol's pick-up line unsaid:
+  // the engine says where the work picks up, with the first step, once.
+  test("picking the work back up says where it picks up, once in this chat", () => {
+    const proj = project();
+    expect(run(UTIL, proj, ["intent-create", "--scope", "classic", "--arguments", "show the asset description on hover"], chat).status).toBe(0);
+    const first = nextIn(proj, ["--resume"]);
+    expect(String(first.narration)).toMatch(
+      /^Picking up where we left off, at [A-Z][^.]*\. If you'd rather redo it, go back to another stage, or start fresh, just say so\./,
+    );
+    expect(String(nextIn(proj, ["--resume"]).narration ?? "")).not.toContain("Picking up where we left off");
+  });
+
   test("a newer prompt from the person drops a line still waiting", () => {
     const proj = project();
     expect(run(UTIL, proj, ["intent-create", "--scope", "classic", "--arguments", "show the asset description on hover"], chat).status).toBe(0);
