@@ -1,4 +1,4 @@
-// covers: function:checkpointPolicyEnabled, function:resolveConstructionCheckpoint,
+// covers: function:checkpointPolicyEnabled, function:resolveConstructionCheckpoint, function:staleEvidenceIsReattestable,
 // function:verifyConstructionCheckpoint, function:approveConstructionCheckpoint,
 // function:rejectConstructionCheckpoint, audit:GATE_APPROVED, audit:GATE_REJECTED
 // covers: function:authorizedVerificationCommand, function:verificationCommandDetails, audit:VERIFICATION_COMMAND_RECORDED, subcommand:aidlc-state:set-construction-verification-command
@@ -275,6 +275,40 @@ describe("t341 Construction checkpoint verification and evidence", () => {
     const differentCheck = verifyConstructionCheckpoint(dir, "alpha", "unit");
     expect(differentCheck.verified).toBe(true);
     expect(differentCheck.approved).toBe(false);
+  }, NATIVE_FIXTURE_SETUP_TIMEOUT_MS);
+
+  test("a changed approved Unit re-attests in one step only under Guard Policy off; strict and relaxed reopen", () => {
+    const dir = project();
+    // Baseline: alpha's evidence is current, so nothing is flagged as changed.
+    const baseline = resolveConstructionCheckpoint(dir, "alpha", "unit");
+    expect(baseline.ready, baseline.errors.join("\n")).toBe(true);
+    expect(baseline.changed_since_approval).toBe(false);
+
+    // A person (or a later Unit) edits one of alpha's approved artifacts, so its
+    // recorded completion fingerprint no longer matches current content.
+    writeFileSync(artifact(dir, "alpha", "functional-design"), "# edited after approval\n");
+
+    const setGuard = (value: string) => writeFileSync(seededStateFile(dir),
+      readFileSync(seededStateFile(dir), "utf-8")
+        .replace(/- \*\*(Change Control|Guard Policy)\*\*: \w+/, `- **Guard Policy**: ${value}`));
+
+    // Guard Policy off: the change is a one-step re-attest, not a block.
+    setGuard("off");
+    const off = resolveConstructionCheckpoint(dir, "alpha", "unit");
+    expect(off.changed_since_approval).toBe(true);
+    expect(off.ready, off.errors.join("\n")).toBe(true);
+
+    // Relaxed still requires a current paired review: the change blocks, no re-attest.
+    setGuard("relaxed");
+    const relaxed = resolveConstructionCheckpoint(dir, "alpha", "unit");
+    expect(relaxed.changed_since_approval).toBe(false);
+    expect(relaxed.ready).toBe(false);
+
+    // Strict reopens: the change blocks (re-review) and is not a one-step re-attest.
+    setGuard("strict");
+    const strict = resolveConstructionCheckpoint(dir, "alpha", "unit");
+    expect(strict.changed_since_approval).toBe(false);
+    expect(strict.ready).toBe(false);
   }, NATIVE_FIXTURE_SETUP_TIMEOUT_MS);
 
   test("revoking autonomy preserves completed approvals and restores future human gates", () => {

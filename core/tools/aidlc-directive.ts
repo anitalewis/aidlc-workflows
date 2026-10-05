@@ -280,6 +280,7 @@ export interface RunStageDirective {
     approved: boolean;
     human_required: boolean;
     errors: string[];
+    changed_since_approval: boolean;
     proof_path: string;
     verification_command: string | null;
     command_authorized: boolean;
@@ -1406,7 +1407,7 @@ function checkRunStageShared(
       errors.push(`${kind}: construction_checkpoint must name this Construction Unit`);
     } else {
       checkEnum(checkpoint, "kind", ["unit", "skeleton"], kind, errors);
-      for (const field of ["ready", "verified", "approved", "human_required", "command_authorized"]) {
+      for (const field of ["ready", "verified", "approved", "human_required", "command_authorized", "changed_since_approval"]) {
         if (typeof checkpoint[field] !== "boolean") errors.push(`${kind}: construction_checkpoint.${field} must be boolean`);
       }
       for (const field of ["fingerprint", "proof_path"]) {

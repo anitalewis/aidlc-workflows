@@ -47,6 +47,8 @@ import {
   recordFileTargetOrThrow,
   resolveBoltDag,
   resolveReviewClass,
+  resolveGuardPolicy,
+  staleEvidenceIsReattestable,
   resolveWorkflowSelection,
   reviewArtifactFingerprint,
   reviewAttemptWindow,
@@ -117,6 +119,11 @@ export interface ConstructionCheckpoint {
   enabled: boolean;
   ready: boolean;
   errors: string[];
+  // True when the Unit was approved/reviewed before and its content has since
+  // changed (a person edited approved work, or a later Unit edited it), and
+  // Guard Policy off makes that a one-step re-attest rather than a block.
+  // The gate presents it as "changed since approval; re-attest to continue".
+  changed_since_approval: boolean;
   run_floor: string;
   run_floors: Record<string, string>;
   proof_path: string;
@@ -314,6 +321,10 @@ function snapshot(
     throw new Error(`Unit "${unit}" is not in the authoritative unit DAG.`);
   }
   const errors: string[] = [];
+  // Guard Policy off turns "approved Unit changed since" from a blocking
+  // re-review demand into a one-step re-attest at the gate (staleEvidenceIsReattestable).
+  const guardPolicy = resolveGuardPolicy(projectDir, state).value;
+  let changedSinceApproval = false;
   const enabled = checkpointPolicyEnabled(state);
   if (!enabled) errors.push("Construction Checkpoints: enabled requires solo Units with an in-scope source-producing stage.");
   if (stages.length === 0) errors.push("No applicable per-unit Construction stages.");
@@ -362,12 +373,25 @@ function snapshot(
       eventMatchesClaimAttempt(projectDir, row.block, unit),
     ));
     const completionFingerprint = completion && auditBlockField(completion.block, "Artifact Fingerprint");
-    if (
-      !lifecycle.receipts.has(unit) ||
-      completion?.event !== "UNIT_COMPLETED" ||
-      auditBlockField(completion.block, "Run floor") !== floor ||
-      (completionFingerprint !== null && completionFingerprint !== artifact)
-    ) errors.push(`${slug}: current Unit completion evidence is missing or stale.`);
+    // A prior completion EXISTS when this attempt recorded UNIT_COMPLETED at the
+    // current run floor — a raw audit fact, independent of whether its content
+    // still matches (so a change does not read as "never completed"). It is
+    // STALE when the Unit changed since: the fingerprint-filtered receipt no
+    // longer carries it, or its recorded artifact fingerprint differs.
+    const completionAttested =
+      completion?.event === "UNIT_COMPLETED" &&
+      auditBlockField(completion.block, "Run floor") === floor;
+    const completionStale =
+      completionAttested &&
+      (!lifecycle.receipts.has(unit) ||
+        (completionFingerprint !== null && completionFingerprint !== artifact));
+    if (!completionAttested) {
+      errors.push(`${slug}: current Unit completion evidence is missing or stale.`);
+    } else if (completionStale) {
+      // strict/relaxed reopen (block); Guard Policy off makes it a one-step re-attest.
+      if (staleEvidenceIsReattestable(guardPolicy, true)) changedSinceApproval = true;
+      else errors.push(`${slug}: current Unit completion evidence is missing or stale.`);
+    }
 
     let source: string | null = null;
     if (stage.workspace_requires) {
@@ -431,20 +455,35 @@ function snapshot(
         stage.workspace_requires && source !== null && reviewedSource !== null &&
         reviewedSource !== source && receipts.unitSourceAttributed.has(unit)
       ) source = reviewedSource;
-      if (
-        !review || !receipts.unitVerdicts.has(unit) ||
-        !binding || !completionCarriesVerifiedReview(projectDir, binding, review.block) ||
-        receipts.unitPending.has(unit) || receipts.openBoltUnits.has(unit) ||
-        reviewFloor !== floor ||
-        auditBlockField(review.block, "Artifact Fingerprint") !== artifact ||
-        auditBlockField(review.block, "Iteration") !== String(receipts.unitIterations.get(unit)) ||
-        (stage.workspace_requires && (
-          source === null ||
-          auditBlockField(review.block, "Unit Source Fingerprint") !== source ||
+      // A terminal review is PRESENT-AND-VALID when it exists for this attempt
+      // with a recorded verdict, a verified binding, the right iteration, no
+      // pending/open state, and no source bypass. It is STALE only when, being
+      // otherwise valid, its bound artifact (or source) fingerprint no longer
+      // matches current content — i.e. the Unit changed since it was reviewed.
+      // A missing source manifest is absence, not change, so it still blocks.
+      const sourceMissing = stage.workspace_requires && source === null;
+      const reviewPresentAndValid =
+        !!review && receipts.unitVerdicts.has(unit) &&
+        !!binding && completionCarriesVerifiedReview(projectDir, binding, review.block) &&
+        !receipts.unitPending.has(unit) && !receipts.openBoltUnits.has(unit) &&
+        reviewFloor === floor &&
+        auditBlockField(review.block, "Iteration") === String(receipts.unitIterations.get(unit)) &&
+        !(stage.workspace_requires && (
           auditBlockField(review.block, "Source Freshness Bypass") !== null ||
           auditBlockField(review.block, "Unit Source Binding Bypass") !== null
-        ))
-      ) errors.push(`${slug}: current artifact/source-bound terminal review evidence is required.`);
+        ));
+      const reviewContentStale =
+        reviewPresentAndValid && !sourceMissing && (
+          auditBlockField(review!.block, "Artifact Fingerprint") !== artifact ||
+          (stage.workspace_requires && auditBlockField(review!.block, "Unit Source Fingerprint") !== source)
+        );
+      if (!reviewPresentAndValid || sourceMissing) {
+        errors.push(`${slug}: current artifact/source-bound terminal review evidence is required.`);
+      } else if (reviewContentStale) {
+        // strict/relaxed reopen (block); Guard Policy off makes it a one-step re-attest.
+        if (staleEvidenceIsReattestable(guardPolicy, true)) changedSinceApproval = true;
+        else errors.push(`${slug}: current artifact/source-bound terminal review evidence is required.`);
+      }
     }
     evidence.push({
       slug, floor, artifact, source, review_class: reviewClass,
@@ -507,7 +546,7 @@ function snapshot(
     root, rows, state, verificationCommand: shared.verificationCommand,
     result: {
       kind, unit, stages, fingerprint, verified, approved,
-      human_required: humanRequired, enabled, ready, errors,
+      human_required: humanRequired, enabled, ready, errors, changed_since_approval: changedSinceApproval,
       verification_command: shared.verificationCommand?.label ?? null,
       command_authorized: shared.verificationCommand !== null,
       run_floor: floors[stages.at(-1)!] ?? "unstarted#0",

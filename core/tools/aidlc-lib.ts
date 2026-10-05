@@ -36009,6 +36009,25 @@ export function scopeGuardPolicyDefault(scope: string | null | undefined): Guard
 export const scopeChangeControlDefault = scopeGuardPolicyDefault;
 
 /**
+ * The one owner of the "re-attest, don't block" rule. When an approved unit's
+ * content changes after it was attested — a person edits approved work, or a
+ * later unit edits it — Guard Policy `off` turns that into a one-step re-attest
+ * at the unit gate instead of a blocking demand for a fresh review the advisory
+ * cap cannot grant. `strict` and `relaxed` keep requiring a current paired
+ * review (re-review), unchanged: only `off` waives it. `hadPriorAttest` is the
+ * guard against relaxing a
+ * stage that was never attested at all: only a stage that WAS completed/reviewed
+ * and then changed is re-attestable; a missing or never-reviewed stage still
+ * blocks. Pure.
+ */
+export function staleEvidenceIsReattestable(
+  guardPolicy: GuardPolicy,
+  hadPriorAttest: boolean,
+): boolean {
+  return hadPriorAttest && guardPolicy === "off";
+}
+
+/**
  * Resolved value = the intent's own valid line if present, else strict. Two
  * disagreeing state lines resolve to strict until a write keeps one line.
  * If ANY memory layer declares strict, that file is the source instead.

@@ -129,8 +129,17 @@ already approved at its checkpoint must not be built again by a later swarm.
 
 A `run-stage` with `construction_checkpoint` carries `kind` (`unit` or
 `skeleton`), `unit`, `stages`, `fingerprint`, `ready`, `verified`, `approved`,
-`human_required`, `verification_command`, `command_authorized`, `errors`, and
-`proof_path`. It is a verification/approval re-entry over existing work.
+`human_required`, `changed_since_approval`, `verification_command`,
+`command_authorized`, `errors`, and `proof_path`. It is a
+verification/approval re-entry over existing work.
+
+When `construction_checkpoint.changed_since_approval` is true, the Unit was
+already approved/reviewed and its content has since changed (a person edited
+approved work, or a later Unit edited it) — under Guard Policy off this
+is a **one-step re-attest**, not a re-review. Tell the person in one line that
+the Unit changed since it was approved and present the ordinary approval; their
+single approval re-attests the Unit at its current content. Do **not** re-run
+any stage body and do **not** dispatch the review agent.
 `verification_command` is the full canonical recorded command, never a truncated
 display label. Use the exact Unit and kind the engine emitted:
 

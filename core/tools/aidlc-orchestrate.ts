@@ -7730,6 +7730,7 @@ function applyConstructionCheckpointShape(
     fingerprint: checkpoint.fingerprint, ready: checkpoint.ready,
     verified: checkpoint.verified, approved: checkpoint.approved,
     human_required: checkpoint.human_required, errors: checkpoint.errors,
+    changed_since_approval: checkpoint.changed_since_approval,
     proof_path: checkpoint.proof_path,
     verification_command: checkpoint.verification_command,
     command_authorized: checkpoint.command_authorized,

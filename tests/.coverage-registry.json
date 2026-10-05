@@ -10545,6 +10545,18 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:staleEvidenceIsReattestable",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t341-construction-checkpoints.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:stalePlanApprovalReceiptsForTarget",
       "minMechanism": "none",
       "coveredBy": [
