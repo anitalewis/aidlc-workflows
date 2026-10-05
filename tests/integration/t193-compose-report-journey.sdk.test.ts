@@ -179,12 +179,14 @@ describe("t193 report composer journey (/aidlc compose --report, sdk live)", () 
         ) as Record<string, unknown>;
         expect(Object.keys(grid).length).toBe(11);
 
-        // The created workflow rides the triaged route: a compact incremental
-        // scope (bugfix, or security-patch if the composer judged the hotspot
-        // must deploy) - never the feature freeform default.
+        // The created workflow rides the triaged route: a compact stock
+        // fix-and-ship scope (bugfix; security-patch if the composer judged the
+        // hotspot must deploy; express, the lightest requirements-to-deploy
+        // line, which it also picks for a short list of findings) - never the
+        // feature freeform default and never a minted scope.
         const stateText = readStateFile(proj) ?? "";
         const scope = readStateField(stateText, "Scope");
-        expect(["bugfix", "security-patch"]).toContain(scope ?? "");
+        expect(["bugfix", "security-patch", "express"]).toContain(scope ?? "");
         const projectDescription = readStateField(stateText, "Project");
         expect(projectDescription).toBeDefined();
         expect(projectDescription).not.toBe("[Project description]");
