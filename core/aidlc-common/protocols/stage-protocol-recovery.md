@@ -50,10 +50,11 @@ If `aidlc-state.md` exists, read it to determine:
 - Whether artifacts from prior stages exist
 
 Continue from the last incomplete stage: a bare `/aidlc` and `/aidlc --resume`
-both carry on, with no resume menu. Once, with the first thing you say after
-picking the work back up (at an approval gate too):
+both carry on, with no resume menu. Once, at the start of the first message the
+person reads after you pick the work back up (at an approval gate too, right
+before its question), never as a message of its own:
 
-**SAY:** "Say redo, jump to a stage, or start fresh if you'd rather."
+**SAY:** "Picking up where we left off, at [where the work is, in plain words, such as Unit 2's approval]. If you'd rather redo it, go back to another stage, or start fresh, just say so."
 
 Redo, a jump, or a fresh start happens only when the person asks for one. Read
 which one they mean from their words and report it with
