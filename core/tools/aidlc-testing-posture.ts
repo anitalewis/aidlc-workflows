@@ -2357,8 +2357,10 @@ function earlierPlanApproval(
   const questionsPath = join(authority.stageDir, "code-generation-questions.md");
   // A checkout that changed its line endings has not changed the answer.
   const questions = readFileSync(questionsPath, "utf-8").replace(/\r\n/g, "\n");
+  // An approval an earlier AI-DLC recorded (an earlier fingerprint format) is
+  // still the person's approval: an upgrade mid-build does not re-ask.
   const fingerprint = questionsFileApprovalFingerprint(questions);
-  if (!fingerprint || !approvalFingerprintIsCurrentFormat(fingerprint) || !questionsFileApproved(questions)) return null;
+  if (!fingerprint || !questionsFileApproved(questions)) return null;
   const promptSha256 = createHash("sha256")
     .update(`${questions.replace(/^\[Answer\]:[ \t]*.*$/gm, "[Answer]:").trimEnd()}\n`, "utf-8")
     .digest("hex");
