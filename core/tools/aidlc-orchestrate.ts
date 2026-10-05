@@ -358,6 +358,7 @@ import {
   steeringTokenKeyPathFor,
   takeSessionSelectionNotice,
   addPendingPersonLines,
+  markPersonLinesHeard,
   pendingPersonLines,
   personLineHeard,
   PLAN_FIELD,
@@ -810,6 +811,28 @@ function speaksToPerson(directive: Directive): boolean {
   return typeof directive.narration === "string" && directive.narration.length > 0;
 }
 
+// A chat picking the work back up (`next --resume`) hears where it picks up and
+// what else it can ask for, once, with the first step it speaks from. The line
+// rides the engine's own narration: left to the protocol, it went unsaid.
+let pickingUp = false;
+function pickUpLine(directive: Directive): string | null {
+  const step = directive as { stage?: unknown; unit?: unknown };
+  const node = typeof step.stage === "string" ? nodeForSlug(step.stage) : undefined;
+  if (!node) return null;
+  const unit = typeof step.unit === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(step.unit) ? ` for ${step.unit}` : "";
+  return `Picking up where we left off, at ${stageLabel(node, node.slug) ?? node.slug}${unit}. ` +
+    "If you'd rather redo it, go back to another stage, or start fresh, just say so.";
+}
+function keepPickUpLine(directive: Directive): void {
+  const projectDir = engineProjectDir;
+  const sessionId = engineSessionId;
+  if (!pickingUp || !projectDir || !sessionId || isReadOnlyEngineProbe() || isRouteCheckProbe()) return;
+  pickingUp = false;
+  const line = pickUpLine(directive);
+  if (line === null || personLineHeard(projectDir, sessionId, line)) return;
+  if (addPendingPersonLines(projectDir, sessionId, [line])) markPersonLinesHeard(projectDir, sessionId, [line]);
+}
+
 // Person lines kept from steps the agent passed through this turn are said,
 // in order and once, with the step it speaks from. One that would push the
 // step over its size limit waits for the next one. They count as said only
@@ -947,6 +970,7 @@ function prepareEmission(directive: Directive): PreparedEmission {
       transported = withChangeNotices(transported, [selectionNotice, ...(transported.change_notices ?? [])]);
     }
   }
+  keepPickUpLine(directive);
   const personLinesSaid = sayPendingPersonLines(requested, transported);
   const result = validateDirective(transported);
   if (!result.valid) {
@@ -6391,6 +6415,7 @@ function routeNext(args: string[], projectDir: string | undefined): void {
   activeStageValidityAdvisory = undefined;
   activeRetiredGuardPolicyNotice = null;
   const flags = parseNextFlags(args);
+  pickingUp = flags.resume === true;
 
   // Turn-shape marker: a `next` that ASKS FOR THE NEXT MOVE is engagement with
   // the forwarding loop even though it mutates nothing — and it emits no audit
