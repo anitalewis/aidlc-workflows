@@ -823,14 +823,22 @@ function pickUpLine(directive: Directive): string | null {
   return `Picking up where we left off, at ${stageLabel(node, node.slug) ?? node.slug}${unit}. ` +
     "If you'd rather redo it, go back to another stage, or start fresh, just say so.";
 }
-function keepPickUpLine(directive: Directive): void {
+// A stage or question step says it itself, even one with no line of its own
+// (a waiting Unit checkpoint); a rules part keeps it for the step it leads to.
+function withPickUpLine(transported: Directive): Directive {
   const projectDir = engineProjectDir;
   const sessionId = engineSessionId;
-  if (!pickingUp || !projectDir || !sessionId || isReadOnlyEngineProbe() || isRouteCheckProbe()) return;
+  if (!pickingUp || !projectDir || !sessionId || isReadOnlyEngineProbe() || isRouteCheckProbe()) return transported;
   pickingUp = false;
-  const line = pickUpLine(directive);
-  if (line === null || personLineHeard(projectDir, sessionId, line)) return;
-  if (addPendingPersonLines(projectDir, sessionId, [line])) markPersonLinesHeard(projectDir, sessionId, [line]);
+  const line = pickUpLine(transported);
+  if (line === null || personLineHeard(projectDir, sessionId, line)) return transported;
+  if (transported.kind === "run-stage" || transported.kind === "ask") {
+    transported.narration = transported.narration ? `${line} ${transported.narration}` : line;
+    markPersonLinesHeard(projectDir, sessionId, [line]);
+  } else if (addPendingPersonLines(projectDir, sessionId, [line])) {
+    markPersonLinesHeard(projectDir, sessionId, [line]);
+  }
+  return transported;
 }
 
 // Person lines kept from steps the agent passed through this turn are said,
@@ -970,7 +978,7 @@ function prepareEmission(directive: Directive): PreparedEmission {
       transported = withChangeNotices(transported, [selectionNotice, ...(transported.change_notices ?? [])]);
     }
   }
-  keepPickUpLine(directive);
+  transported = withPickUpLine(transported);
   const personLinesSaid = sayPendingPersonLines(requested, transported);
   const result = validateDirective(transported);
   if (!result.valid) {
