@@ -83,6 +83,9 @@ export const MATRIX_SKIP = [
 
 export const MATRIX_UNITS = ["core", "extra"];
 
+/** Changes to the first Unit's reviewed source after its review. */
+const REVIEWED_SOURCE_CHANGES = new Set<GuardChange>(["later-unit-edit", "later-unit-edit-unclaimed", "hand-edit-source", "revert"]);
+
 /** Stand-in hooks that make one change. Each fires once. */
 export function changeHooks(change: GuardChange): Partial<ScopeRunOptions> {
   let done = false;
@@ -365,14 +368,18 @@ export function runCell(cell: GuardCell, change: GuardChange, options: CellOptio
 const stateField = (state: string, name: string) => new RegExp(`^- \\*\\*${name}\\*\\*: ?(.*)$`, "m").exec(state)?.[1]?.trim() ?? null;
 
 /** Questions put to the person more than once about the same thing. A learnings question rides along with the checkpoint it belongs to. */
-export function askedAgain(agent: AgentStandIn, own: (what: string) => boolean = () => false): string[] {
+export function askedAgain(agent: AgentStandIn, own: (key: string) => boolean = () => false): string[] {
   const seen = new Map<string, number>();
   for (const a of agent.asked) {
-    if (a.what === "learnings" || a.what === "guard recovery" || own(a.what)) continue;
+    if (a.what === "learnings" || a.what === "guard recovery") continue;
     const key = `${a.what} at ${a.stage}${a.unit ? ` for ${a.unit}` : ""}`;
     seen.set(key, (seen.get(key) ?? 0) + 1);
   }
-  return [...seen.entries()].filter(([, n]) => n > 1).map(([key, n]) => `${key} (${n} times)`);
+  // One entry per extra presentation; a replay the person asked for is theirs, once.
+  return [...seen.entries()].flatMap(([key, n]) => {
+    const extra = n - 1 - (own(key) ? 1 : 0);
+    return Array.from({ length: Math.max(0, extra) }, (_, i) => `${key} (asked ${i + 2} times)`);
+  });
 }
 
 /** Everything the cell must show; an empty list is a pass. */
@@ -411,7 +418,8 @@ export function cellProblems(c: CellRun): string[] {
   }
 
   // What the person met because of the change.
-  const own = (what: string) => c.change === "second-review" && what === "unit checkpoint";
+  // The second review is asked for at Unit 2's checkpoint, so that checkpoint comes back once.
+  const own = (key: string) => c.change === "second-review" && key === "unit checkpoint at code-generation for extra";
   const again = askedAgain(agent, own);
   const recoveries = agent.asked.filter((a) => a.what === "guard recovery").map((a) => `a guard-recovery question at ${a.stage}`);
   const refusals = agent.refusalsMet.map((r) => r.said.split("\n")[0].slice(0, 300));
@@ -436,9 +444,20 @@ export function recordProblems(c: CellRun): string[] {
   const problems: string[] = [];
   const rows = auditEvents(c.run.proj).filter((e) => e.event === "CHANGE_ACCEPTED");
   const where = (e: { block: string }) => `${field(e.block, "Stage")}${field(e.block, "Unit") ? ` for ${field(e.block, "Unit")}` : ""}`;
+  const lines = c.run.agent.notices;
   if (c.change === "none") {
     for (const e of rows) problems.push(`nothing changed, yet CHANGE_ACCEPTED at ${where(e)} says ${JSON.stringify(field(e.block, "Details"))}`);
+    for (const line of lines) problems.push(`nothing changed, yet the person was told: ${JSON.stringify(line)}`);
     return problems;
+  }
+  // A change to Unit 1's reviewed source under off or relaxed keeps its review
+  // and leaves exactly one row and one line; strict asks for a fresh review.
+  const policy = c.composed?.policyFromEngine ? resolvedPolicy(c) : c.policyAtChange;
+  if (REVIEWED_SOURCE_CHANGES.has(c.change) && policy !== "strict" && c.cell.review !== "none") {
+    if (rows.length !== 1 || field(rows[0].block, "Unit") !== MATRIX_UNITS[0]) {
+      problems.push(`Unit 1's reviewed source changed: ${rows.length} CHANGE_ACCEPTED rows (${rows.map(where).join(", ")}), not one for ${MATRIX_UNITS[0]}`);
+    }
+    if (lines.length !== 1) problems.push(`Unit 1's reviewed source changed: ${lines.length} lines for the person, not one`);
   }
   const seen = new Map<string, number>();
   for (const e of rows) seen.set(where(e), (seen.get(where(e)) ?? 0) + 1);
@@ -446,7 +465,6 @@ export function recordProblems(c: CellRun): string[] {
   for (const e of rows.filter((e) => field(e.block, "Changed") === "(paths unavailable)")) {
     problems.push(`CHANGE_ACCEPTED at ${where(e)} names no changed path`);
   }
-  const lines = c.run.agent.notices;
   if (lines.length > seen.size) problems.push(`${lines.length} change lines for ${seen.size} changed pieces of work: ${JSON.stringify(lines).slice(0, 400)}`);
   return problems;
 }

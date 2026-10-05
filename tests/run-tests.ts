@@ -157,7 +157,8 @@ OUTPUT MODIFIERS (combinable with any tier/profile):
   --filter PAT    Only run tests whose filename matches extended regex PAT
                   Fails if a selected file executes no cases or no files match.
                   The scope runs and the guard matrix (t-scope-run-*,
-                  t-guard-matrix-*) run only when a --filter selects them.
+                  t-guard-matrix-*) run only when a --filter selects them,
+                  or with --release/--all.
   --exclude PAT   Leave out tests whose filename matches PAT (the same names
                   --filter matches); the rest run as an ordinary tier.
   --parallel N    Run up to N test files concurrently within a tier (alias: -P N).
@@ -221,7 +222,8 @@ function parseArgs(argv: string[]): ParsedArgs {
 
 const args = parseArgs(process.argv.slice(2));
 // The scope runs and the guard matrix take minutes per file, so a run with no
-// --filter leaves them out; CI runs them as jobs of their own with a filter.
+// --filter leaves them out, except the full --release/--all acceptance; CI
+// runs them as jobs of their own with a filter.
 const SELECTED_ONLY = /^t-(scope-run|guard-matrix)-/;
 let selectedOnlyNoted = false;
 
@@ -1242,11 +1244,11 @@ function levelFiles(level: Level, excludes: string[] = []): string[] {
     ? readdirSync(dir)
         .filter((f) => f.endsWith(".test.ts"))
         .filter((f) => !excludeSet.has(f))
-        .filter((f) => level !== "integration" || args.filter || !SELECTED_ONLY.test(f))
+        .filter((f) => level !== "integration" || args.filter || args.fullProfile || !SELECTED_ONLY.test(f))
         .sort()
         .map((f) => join(dir, f))
     : [];
-  if (level === "integration" && !args.filter && !selectedOnlyNoted && existsSync(dir) &&
+  if (level === "integration" && !args.filter && !args.fullProfile && !selectedOnlyNoted && existsSync(dir) &&
     readdirSync(dir).some((f) => SELECTED_ONLY.test(f))) {
     selectedOnlyNoted = true;
     // stderr, so a machine-read stdout (a plan, a file list) stays clean.

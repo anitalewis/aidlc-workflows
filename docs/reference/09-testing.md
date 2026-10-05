@@ -224,7 +224,7 @@ Verifies the orchestrator's structural correctness without invoking the LLM. If 
 - Scope runs: every shipped scope driven from the person's first request to done (integration, `tests/integration/t-scope-run-*`; see below)
 - Guard matrix: what the person meets when files change under approved work, per Guard Policy, review cap and plan approval (integration, `tests/integration/t-guard-matrix-*`; see below)
 
-**Run:** `bun tests/run-tests.ts` (default, no flags needed). `bash tests/run-tests.sh` is a compatibility wrapper for existing POSIX commands. The scope runs and the guard matrix run only when a `--filter` selects them (see the CLI reference).
+**Run:** `bun tests/run-tests.ts` (default, no flags needed). `bash tests/run-tests.sh` is a compatibility wrapper for existing POSIX commands. The scope runs and the guard matrix run only when a `--filter` selects them, or with `--release`/`--all` (see the CLI reference).
 
 ### Scope runs
 
@@ -1015,9 +1015,10 @@ below. With `--shard`, the shard is chosen first and then the files it matches
 are left out of it.
 
 The scope runs and the guard matrix (`t-scope-run-*`, `t-guard-matrix-*`) take
-minutes per file, so a run with no `--filter` leaves them out and says so. Run
-them with `--integration -P 8 --filter '^t-(scope-run|guard-matrix)-'`, as
-their CI jobs do.
+minutes per file, so a run with no `--filter` leaves them out and says so; the
+full `--release` and `--all` acceptance keeps them. Run them alone with
+`--integration -P 8 --filter '^t-(scope-run|guard-matrix)-'`, as their CI jobs
+do.
 
 An explicit **`--filter` requires execution in each selected file**. A file
 whose cases are all skipped (or which declares no cases) fails the run even
@@ -1706,15 +1707,17 @@ Artifacts are `full-suite-native-plan`, `full-suite-native-<job>` (complete log
 stamp directories and JUnit), `full-suite-native-result`,
 `full-suite-production-guards`,
 `full-suite-deterministic-<suite>-<OS>` (suite is `smoke`, `unit-1` through
-`unit-12`, `integration`, or `e2e`), `full-suite-live-<family>-<slice-number>-<OS>`,
+`unit-12`, `integration`, `scope-runs`, `guard-matrix`, or `e2e`),
+`full-suite-scope-runs-<OS>` and `full-suite-guard-matrix-<OS>` (the release
+`scope_runs` job), `full-suite-live-<family>-<slice-number>-<OS>`,
 `full-suite-live-release-contract-Windows`, and the purpose-specific result
 (90-day retention): `full-suite-result` for `purpose: "release"`,
 `full-suite-live-verification-result` for `"live-verification"`, and
 `full-suite-verification-result` for `"full-verification"`. The final JSON records `sha`, `runId`,
 `runAttempt`, `purpose`, `verificationFamily`, `coveragePolicy`, `passed`, `complete`, every job's result in `legs`,
 `disabledLegs: []`, `omittedLegs`, and live families declared with `hosting: "excluded"` in the
-sorted `excluded` list. For `purpose: "release"` under `required-hosted-live-shards-v2`, `passed` requires a 40-hex commit ID, exactly `deterministic` and
-`production_guards` omitted and skipped, and every other declared job successful.
+sorted `excluded` list. For `purpose: "release"` under `required-hosted-live-shards-v3`, `passed` requires a 40-hex commit ID, exactly `deterministic` and
+`production_guards` omitted and skipped, and every other declared job, `scope_runs` included, successful.
 Missing, failed, cancelled or unexpectedly skipped required jobs fail. `disabledLegs` is retained so the Full Suite result policy can reject
 historical disabled-live reports. `complete` additionally requires
 no excluded families; it remains false with the documented Kiro/Cursor/Copilot
@@ -1723,7 +1726,7 @@ without failing the suite; disabled required jobs fail it.
 The stable gate, `scripts/ci-full-suite-evidence.ts check`, accepts a result only
 when `sha` is the tagged commit, `runId` is the run it came from, `purpose` is
 `"release"`, `verificationFamily` is `"all"`, `coveragePolicy` is
-`required-hosted-live-shards-v2`, `passed` is true, `disabledLegs` is empty, and
+`required-hosted-live-shards-v3`, `passed` is true, `disabledLegs` is empty, and
 `omittedLegs` is exactly the two deterministic/production-guard job IDs. Those jobs
 must be skipped; all other declared jobs and extra legs must have succeeded.
 It does not require `complete`, so the documented exclusions only warn.

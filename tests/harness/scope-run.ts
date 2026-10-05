@@ -476,8 +476,12 @@ export function recoveryAsk(said: string): Directive | null {
   return whole?.kind === "ask" && whole.ask_type === "guard-recovery" ? whole : null;
 }
 
-/** Remedies a person can take now, in the order the stand-in's person prefers them. */
-const REMEDY_PREFERENCE = ["present-approval-gate", "re-review", "reconfirm-summary", "request-changes"];
+/**
+ * Remedies the stand-in can carry out, in the order its person prefers them.
+ * A human-input remedy (request-changes) needs feedback the scope run never
+ * gives, so it is never picked.
+ */
+const REMEDY_PREFERENCE = ["present-approval-gate", "start-recovery-review", "request-review", "record-verdict", "retry-pending"];
 
 /** Where the agent handed the turn to the person, and whether the Stop hook let it. */
 export interface Handoff {
@@ -800,24 +804,44 @@ export class AgentStandIn {
         this.refusalsMet.push({ said, signature, took: "none: no remedy can be taken now" });
         throw new ScopeRunDeadlock(`a refusal offered no remedy that can be taken now: ${clip(said, 800)}`, said);
       }
-      const remedy = [...remedies].sort((a, b) =>
-        (REMEDY_PREFERENCE.indexOf(a.op) + 99) % 99 - (REMEDY_PREFERENCE.indexOf(b.op) + 99) % 99)[0];
+      const remedy = remedies.filter((r) => REMEDY_PREFERENCE.includes(r.op))
+        .sort((a, b) => REMEDY_PREFERENCE.indexOf(a.op) - REMEDY_PREFERENCE.indexOf(b.op))[0];
+      if (!remedy) {
+        this.refusalsMet.push({ said, signature, took: "none: only remedies that need the person's feedback" });
+        this.fail(`a refusal offered only remedies the stand-in cannot carry out (${remedies.map((r) => r.op).join(", ")}): ${clip(said, 800)}`);
+      }
       const stage = String(ask.stage ?? "");
+      const unit = typeof ask.unit === "string" ? ask.unit : null;
       this.askPerson("guard recovery", stage, String(ask.question ?? ""), remedies.map((r) => r.op), remedy.op);
-      const unit = typeof ask.unit === "string" ? ["--unit", ask.unit] : [];
-      this.must("log", "answer", "--stage", stage, "--checkpoint", "guard-recovery", "--details", remedy.op, ...unit);
-      if (remedy.interaction === "command" && remedy.command) this.host.bash(remedy.command);
+      this.must("log", "answer", "--stage", stage, "--checkpoint", "guard-recovery", "--details", remedy.op,
+        ...(unit ? ["--unit", unit] : []));
+      // The remedy's interaction, as the skill's guard-recovery execution says.
+      if (remedy.interaction === "command") {
+        if (!remedy.command) this.fail(`remedy ${remedy.op} is a command with no command`);
+        const ran = this.host.bash(remedy.command);
+        if (ran.status !== 0) this.refused(`remedy ${remedy.op}`, `${ran.stdout}${ran.stderr}`);
+        const out = parseJson(ran.stdout) as Directive | null;
+        if (out && typeof out.kind === "string" && out.kind !== "print" && out.kind !== "done") this.pending = out;
+      } else if (remedy.op === "start-recovery-review" || remedy.op === "request-review") {
+        this.reviewAgain(stage, unit);
+      }
+      // present-approval-gate and the rest: the next directive carries the step.
       this.refusalsMet.push({ said, signature, took: `remedy ${remedy.op}` });
       return;
     }
     const named = /`(bun \.claude\/tools\/[^`<>]+)`/.exec(said)?.[1];
     if (named && !/\borchestrate(?:\.ts)? next\b/.test(named)) {
-      this.host.bash(named);
+      const ran = this.host.bash(named);
       this.refusalsMet.push({ said, signature, took: named });
+      if (ran.status !== 0) this.refused(named, `${ran.stdout}${ran.stderr}`);
       return;
     }
-    // A refusal that names `next`, or nothing: the agent's next step is `next`.
-    this.refusalsMet.push({ said, signature, took: "next" });
+    if (named) {
+      this.refusalsMet.push({ said, signature, took: "next" });
+      return;
+    }
+    this.refusalsMet.push({ said, signature, took: "none: it named no step" });
+    throw new ScopeRunDeadlock(`a refusal named no step to take: ${clip(said, 800)}`, said);
   }
 
   /** One directive's work. */
