@@ -18,7 +18,8 @@
 // an engine misread shows up as a difference.
 
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { AuditShardEvent } from "../../dist/claude/.claude/tools/aidlc-lib.ts";
 import { afterAll, describe, expect, test } from "bun:test";
@@ -478,10 +479,10 @@ export function recoveryAsk(said: string): Directive | null {
 
 /**
  * Remedies the stand-in can carry out, in the order its person prefers them.
- * A human-input remedy (request-changes) needs feedback the scope run never
- * gives, so it is never picked.
+ * Any other remedy (request-changes needs feedback the scope run never gives)
+ * stops the run as the stand-in's limit, never as the engine's deadlock.
  */
-const REMEDY_PREFERENCE = ["present-approval-gate", "start-recovery-review", "request-review", "record-verdict", "retry-pending"];
+const REMEDY_PREFERENCE = ["present-approval-gate", "start-recovery-review", "request-review"];
 
 /** Where the agent handed the turn to the person, and whether the Stop hook let it. */
 export interface Handoff {
@@ -807,7 +808,7 @@ export class AgentStandIn {
       const remedy = remedies.filter((r) => REMEDY_PREFERENCE.includes(r.op))
         .sort((a, b) => REMEDY_PREFERENCE.indexOf(a.op) - REMEDY_PREFERENCE.indexOf(b.op))[0];
       if (!remedy) {
-        this.refusalsMet.push({ said, signature, took: "none: only remedies that need the person's feedback" });
+        this.refusalsMet.push({ said, signature, took: "none: no remedy the stand-in can carry out" });
         this.fail(`a refusal offered only remedies the stand-in cannot carry out (${remedies.map((r) => r.op).join(", ")}): ${clip(said, 800)}`);
       }
       const stage = String(ask.stage ?? "");
@@ -815,18 +816,26 @@ export class AgentStandIn {
       this.askPerson("guard recovery", stage, String(ask.question ?? ""), remedies.map((r) => r.op), remedy.op);
       this.must("log", "answer", "--stage", stage, "--checkpoint", "guard-recovery", "--details", remedy.op,
         ...(unit ? ["--unit", unit] : []));
-      // The remedy's interaction, as the skill's guard-recovery execution says.
-      if (remedy.interaction === "command") {
-        if (!remedy.command) this.fail(`remedy ${remedy.op} is a command with no command`);
-        const ran = this.host.bash(remedy.command);
-        if (ran.status !== 0) this.refused(`remedy ${remedy.op}`, `${ran.stdout}${ran.stderr}`);
-        const out = parseJson(ran.stdout) as Directive | null;
-        if (out && typeof out.kind === "string" && out.kind !== "print" && out.kind !== "done") this.pending = out;
-      } else if (remedy.op === "start-recovery-review" || remedy.op === "request-review") {
-        this.reviewAgain(stage, unit);
-      }
-      // present-approval-gate and the rest: the next directive carries the step.
       this.refusalsMet.push({ said, signature, took: `remedy ${remedy.op}` });
+      // The remedy's interaction, as the skill's guard-recovery execution says.
+      // A step the remedy takes that is refused in turn is followed the same way.
+      try {
+        if (remedy.interaction === "command") {
+          if (!remedy.command) this.fail(`remedy ${remedy.op} is a command with no command`);
+          const ran = this.host.bash(remedy.command);
+          if (ran.status !== 0) this.refused(`remedy ${remedy.op}`, `${ran.stdout}${ran.stderr}`);
+          const out = parseJson(ran.stdout) as Directive | null;
+          if (out && typeof out.kind === "string" && out.kind !== "print" && out.kind !== "done") this.pending = out;
+        } else if (remedy.op === "start-recovery-review" || remedy.op === "request-review") {
+          this.reviewAgain(stage, unit);
+        } else if (remedy.op === "present-approval-gate") {
+          // Its route after the pick: the stage's gate opens for the person.
+          this.report(stage, "--result", "awaiting-approval");
+        }
+      } catch (error) {
+        if (!(error instanceof ScopeRunRefused) || error instanceof ScopeRunDeadlock) throw error;
+        this.followRefusal(error.refusal);
+      }
       return;
     }
     const named = /`(bun \.claude\/tools\/[^`<>]+)`/.exec(said)?.[1];
@@ -1555,6 +1564,13 @@ export function scopeRunProblems(run: ScopeRun, options: ProblemOptions = {}): s
 
 /** A whole scope run takes minutes, and several times longer on Windows. */
 export const SCOPE_RUN_TIMEOUT_MS = 60 * 60_000;
+
+/** A scratch directory the file's cleanup removes with its projects. */
+export function scopeScratchDir(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  projects.push(dir);
+  return dir;
+}
 
 /** Remove every project this file's runs made. */
 export function cleanupScopeProjects(): void {

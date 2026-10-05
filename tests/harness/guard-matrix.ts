@@ -19,8 +19,7 @@
  * meets across a whole run.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { appendFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { appendFileSync, cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, test } from "bun:test";
 import { REPO_ROOT } from "./fixtures.ts";
@@ -40,6 +39,7 @@ import {
   ScopeRunStuck,
   SCOPE_RUN_TIMEOUT_MS,
   cleanupScopeProjects,
+  scopeScratchDir,
   sourceStages,
 } from "./scope-run.ts";
 
@@ -279,7 +279,7 @@ export function pluginCell(plugin: string, policy: GuardPolicy | null, review: R
     `# ${plugin} scope`, "", "A team's own flow, shipped in their plugin.", "",
   ].join("\n");
   const install = (proj: string) => {
-    const root = mkdtempSync(join(tmpdir(), `plugin-${plugin}-`));
+    const root = scopeScratchDir(`plugin-${plugin}-`);
     const built = join(REPO_ROOT, "dist", "plugins", "test-pro", "claude");
     cpSync(join(built, ".claude-plugin"), join(root, ".claude-plugin"), { recursive: true });
     cpSync(join(built, "hooks"), join(root, "hooks"), { recursive: true });
@@ -343,7 +343,7 @@ export function runCell(cell: GuardCell, change: GuardChange, options: CellOptio
   const result: CellRun = { cell, change, policyAtChange, composed: options.composed, shipped: options.shipped };
   const composed = options.composed;
   // The scope's own file, for what it declares, before it is installed.
-  const scopeFile = composed ? join(mkdtempSync(join(tmpdir(), "guard-cell-")), `aidlc-${composed.name}.md`) : undefined;
+  const scopeFile = composed ? join(scopeScratchDir("guard-cell-"), `aidlc-${composed.name}.md`) : undefined;
   if (composed && scopeFile) writeFileSync(scopeFile, composed.text);
   try {
     result.run = runScope(composed?.name ?? "classic", {
@@ -445,15 +445,18 @@ export function recordProblems(c: CellRun): string[] {
   const rows = auditEvents(c.run.proj).filter((e) => e.event === "CHANGE_ACCEPTED");
   const where = (e: { block: string }) => `${field(e.block, "Stage")}${field(e.block, "Unit") ? ` for ${field(e.block, "Unit")}` : ""}`;
   const lines = c.run.agent.notices;
-  if (c.change === "none") {
-    for (const e of rows) problems.push(`nothing changed, yet CHANGE_ACCEPTED at ${where(e)} says ${JSON.stringify(field(e.block, "Details"))}`);
-    for (const line of lines) problems.push(`nothing changed, yet the person was told: ${JSON.stringify(line)}`);
+  const policy = c.composed?.policyFromEngine ? resolvedPolicy(c) : c.policyAtChange;
+  // No change, a second review the person asked for, or strict (which asks
+  // for a fresh review instead of accepting the change): no row, no line.
+  if (c.change === "none" || c.change === "second-review" || policy === "strict") {
+    const why = c.change === "none" ? "nothing changed" : c.change === "second-review" ? "only a second review" : "under strict";
+    for (const e of rows) problems.push(`${why}, yet CHANGE_ACCEPTED at ${where(e)} says ${JSON.stringify(field(e.block, "Details"))}`);
+    for (const line of lines) problems.push(`${why}, yet the person was told: ${JSON.stringify(line)}`);
     return problems;
   }
   // A change to Unit 1's reviewed source under off or relaxed keeps its review
-  // and leaves exactly one row and one line; strict asks for a fresh review.
-  const policy = c.composed?.policyFromEngine ? resolvedPolicy(c) : c.policyAtChange;
-  if (REVIEWED_SOURCE_CHANGES.has(c.change) && policy !== "strict" && c.cell.review !== "none") {
+  // and leaves exactly one row and one line.
+  if (REVIEWED_SOURCE_CHANGES.has(c.change) && c.cell.review !== "none") {
     if (rows.length !== 1 || field(rows[0].block, "Unit") !== MATRIX_UNITS[0]) {
       problems.push(`Unit 1's reviewed source changed: ${rows.length} CHANGE_ACCEPTED rows (${rows.map(where).join(", ")}), not one for ${MATRIX_UNITS[0]}`);
     }
