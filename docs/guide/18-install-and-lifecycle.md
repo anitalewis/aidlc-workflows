@@ -1038,20 +1038,33 @@ one. Environment and other top-level settings (including `disableAllHooks`)
 stay yours, except for values attributed to recorded provider or project
 answers.
 
-Provider, scope, and model answers preserve project-owned fields in
-`.codex/config.toml`. The Codex `[shell_environment_policy]`,
-`[sandbox_workspace_write]`, `[agents]`, `[features]`, `[tools]`, and `[tui]`
-tables remain framework-owned. Local edits to those entries conflict
-against the baseline, and `--force` restores the shipped entries while
+`.codex/config.toml` belongs to the project as well; AI-DLC contributes its
+settings key by key: `developer_instructions`, `sandbox_mode`,
+`suppress_unstable_features_warning`, and the keys it ships in the
+`[shell_environment_policy]`, `[sandbox_workspace_write]`, `[agents]`,
+`[features]`, `[tools]`, and `[tui]` tables. A refresh, including those
+accompanying provider, scope, or model answers, changes only those keys and
+keeps every other byte: your own keys (also inside AI-DLC's tables), your own
+tables (such as `[agents.<role>]` or `[mcp_servers.<name>]`), comments, order,
+and spelling. An AI-DLC value nobody changed takes the release's value; a value
+you changed stays yours, with a note when a release ships a different one
+(delete the key and refresh to take it); a deleted AI-DLC key comes back, with
+a note. The active space's `AIDLC_RULES_DIR` stays as it is. A project that
+already has its own `.codex/config.toml` keeps it on first install, and AI-DLC
+adds its settings. A file the refresh cannot merge safely (it does not parse,
+or uses one of AI-DLC's table names for something else, such as an array of
+tables) still reports a conflict; `--force` then restores AI-DLC's tables while
 retaining unrelated project-owned fields. An explicit `--from` selects that
 source instead of the project's copy.
 
-Human output prints `Note:` when AI-DLC entries in `.claude/settings.json`
-were restored, and when a custom Claude statusline or announcement was kept
+Human output prints `Note:` when AI-DLC entries in `.claude/settings.json` or
+`.codex/config.toml` were restored or added, and when your own value for one of
+them (a custom Claude statusline or announcement, or a Codex key) was kept
 while this release ships a different one; JSON output exposes the same
-messages in `data.notes`. To restore them, use `aidlc config --harness claude`,
-not the bare interactive setup walk. Copy-channel projects also pass
-`--from <the runtime/claude root you copied from>`.
+messages in `data.notes`. To restore them, use `aidlc config --harness claude`
+or `aidlc config --harness codex`, not the bare interactive setup walk.
+Copy-channel projects also pass `--from <the runtime/<harness> root you copied
+from>`.
 
 `opencode.json` belongs to the team: config adds AI-DLC's entries to it and
 keeps every other key, value, comment, and line. Provider answers edit only
