@@ -18,7 +18,7 @@
 // an engine misread shows up as a difference.
 
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { AuditShardEvent } from "../../dist/claude/.claude/tools/aidlc-lib.ts";
@@ -242,6 +242,13 @@ export class ScopeHost {
 
   /** Refusals by the one PreToolUse guard the host fires (see preTool). */
   readonly refusals: string[] = [];
+  /**
+   * Fire the guard before every Bash and Write, and let its refusal block the
+   * call, as Claude Code does. Off for the scope runs, which fire it only where
+   * a refusal would stop the person; on where a case is about what the guard
+   * holds while a plan waits.
+   */
+  fullHost = false;
 
   /**
    * The PreToolUse guard the host fires before Bash, Write and Task calls. Of
@@ -252,7 +259,9 @@ export class ScopeHost {
    */
   private preTool(tool: string, input: Record<string, unknown>): void {
     const res = this.hook("plan-approval-guard", { hook_event_name: "PreToolUse", tool_name: tool, tool_input: input });
-    if (res.status === 2) this.refusals.push(`${tool} ${clip(JSON.stringify(input), 200)}: ${clip(res.stderr, 600)}`);
+    if (res.status !== 2) return;
+    this.refusals.push(`${tool} ${clip(JSON.stringify(input), 200)}: ${clip(res.stderr, 600)}`);
+    if (this.fullHost) throw new ScopeRunRefused(`the guard refused ${tool} ${clip(JSON.stringify(input), 200)}`, res.stderr);
   }
 
   /** Run a command line as the agent's Bash tool would, with the host's Bash hooks. */
@@ -261,7 +270,7 @@ export class ScopeHost {
     if (words[0] !== "bun") throw new Error(`the stand-in runs only bun commands, got: ${line}`);
     // The guard is fired on the engine's loop commands, where a refusal would
     // stop the person's run; logging and read-only helpers skip it.
-    if (/\borchestrate(?:\.ts)? (?:next|continue|report)\b|\borchestrate-?\.?ts continue\b|aidlc-orchestrate\.ts /.test(line)) {
+    if (this.fullHost || /\borchestrate(?:\.ts)? (?:next|continue|report)\b|\borchestrate-?\.?ts continue\b|aidlc-orchestrate\.ts /.test(line)) {
       this.preTool("Bash", { command: line });
     }
     const res = this.spawn(line, [process.execPath, ...words.slice(1)]);
@@ -279,6 +288,13 @@ export class ScopeHost {
     return res;
   }
 
+  /** Delete a file as the agent's Bash `rm` would, with the guard before it. */
+  remove(rel: string): void {
+    const abs = join(this.proj, rel);
+    if (this.fullHost) this.preTool("Bash", { command: `rm ${shellQuote(abs)}` });
+    rmSync(abs, { force: true });
+  }
+
   /** `bun .claude/tools/aidlc.ts engine <args>`, the skill's dispatcher form. */
   engine(...args: string[]): RunResult {
     return this.bash(["bun", ".claude/tools/aidlc.ts", "engine", ...args].map(shellQuote).join(" "));
@@ -288,7 +304,7 @@ export class ScopeHost {
   write(rel: string, content: string): void {
     const abs = join(this.proj, rel);
     // Record files are the agent's own stage output; the guard watches code.
-    if (!RECORD_PREFIX.test(rel)) this.preTool("Write", { file_path: abs, content });
+    if (this.fullHost || !RECORD_PREFIX.test(rel)) this.preTool("Write", { file_path: abs, content });
     mkdirSync(dirname(abs), { recursive: true });
     const existed = existsSync(abs);
     writeFileSync(abs, content);
@@ -1145,7 +1161,12 @@ export class AgentStandIn {
     const request = this.must("log", "review", "--stage", stage, "--reviewer", reviewer, "--iteration", pass, ...forUnit);
     const file = typeof request.reviewFile === "string" ? request.reviewFile : null;
     if (!file) this.fail("review request named no review file");
+    // A per-Unit review on a host with reviewer-scope enforcement writes its
+    // dispatch record before the reviewer starts and deletes it after.
+    const dispatch = this.host.fullHost && unit !== null ? `${activeRecord(this.host.proj).dir.slice(this.host.proj.length + 1)}/.aidlc-engine/reviewer-dispatch.json` : null;
+    if (dispatch) this.host.write(dispatch, `${JSON.stringify({ reviewer, stage, unit, exempt: [] })}\n`);
     this.host.task(reviewer, `Review ${stage}`, () => this.host.write(file, reviewText(reviewer, iteration)));
+    if (dispatch) this.host.remove(dispatch);
     this.must("log", "review", "--stage", stage, "--reviewer", reviewer, "--iteration", pass, "--verdict", "READY", ...forUnit);
     this.reviews.set(`${stage} ${unit ?? ""}`, { reviewer, iteration });
   }
@@ -1435,6 +1456,8 @@ export interface ScopeRunOptions extends StandInOptions {
   request?: string;
   /** A scope that does not ship (composed, or from a plugin): its file, and how it gets into the project. */
   scopeFile?: string;
+  /** Run the host as Claude Code does in full (see ScopeHost.fullHost). */
+  fullHost?: boolean;
   prepare?: (proj: string) => void;
 }
 
@@ -1455,6 +1478,7 @@ export function runScope(scope: string, options: ScopeRunOptions = {}): ScopeRun
   const declared = declaredScope(scope, options.scopeFile);
   const shape = options.shape ?? (declared.existingCode ? "code" : "empty");
   const { proj, host } = createScopeProject(shape);
+  host.fullHost = options.fullHost ?? false;
   options.prepare?.(proj);
   const person = new PersonScript(host);
   const agent = new AgentStandIn(host, person, options);

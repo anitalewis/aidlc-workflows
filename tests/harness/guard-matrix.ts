@@ -72,6 +72,8 @@ export const GUARD_CHANGES = {
   "second-review": "the person asks for a second review after one cycle",
   /** The person stops between Units, the engine is updated, and they resume. */
   "engine-update": "resume after the engine version changes",
+  /** While Unit 2's code plan waits, the person asks for Unit 1 to be reviewed again. */
+  "review-while-plan-waits": "the person asks for a review of Unit 1 while Unit 2's plan waits",
 } as const;
 export type GuardChange = keyof typeof GUARD_CHANGES | "none";
 
@@ -176,6 +178,13 @@ export function changeHooks(change: GuardChange): Partial<ScopeRunOptions> {
         },
       };
     }
+    case "review-while-plan-waits":
+      return {
+        beforePlanAnswer: (_unit, agent) => once(agent.plans.size >= 2, () => {
+          agent.person.say("before I approve the plan, have the reviewer look at Unit 1 again");
+          agent.reviewAgain("code-generation", MATRIX_UNITS[0]);
+        }),
+      };
     case "engine-update":
       return {
         afterCheckpoint: (unit, _kind, agent) => once(unit === "core", () => agent.stopForTheDay(() => updateEngine(agent.host.proj))),
@@ -219,6 +228,8 @@ export interface CellOptions {
   composed?: ComposedScope;
   /** Run classic as it ships: every stage, its own switches, nothing typed. */
   shipped?: boolean;
+  /** Fire the guard on every Bash and Write, as Claude Code does (on for changes the guard holds). */
+  fullHost?: boolean;
 }
 
 /** A scope that does not ship: its file, its stages, and how it gets into the project (a composer's grid by default). */
@@ -351,6 +362,7 @@ export function runCell(cell: GuardCell, change: GuardChange, options: CellOptio
       flags: composed ? ["--plan-approval", cell.plan] : options.shipped ? [] : cellFlags(cell),
       units: MATRIX_UNITS,
       followRefusals: true,
+      fullHost: options.fullHost ?? change === "review-while-plan-waits",
       ...hooks,
       afterApproval,
       ...(composed
@@ -415,6 +427,16 @@ export function cellProblems(c: CellRun): string[] {
     if (c.cell.review === "advisory" && d.reviewer_max_iterations !== 1) {
       problems.push(`review cap advisory, but ${String(d.stage)} allows ${String(d.reviewer_max_iterations)} passes`);
     }
+  }
+
+  // The review the person asked for while the plan waited ran, then.
+  if (c.change === "review-while-plan-waits") {
+    const rows = auditEvents(run.proj);
+    const done = rows.findIndex((e) => e.event === "REVIEW_COMPLETED" && field(e.block, "Unit") === MATRIX_UNITS[0] &&
+      field(e.block, "Iteration") === "2");
+    const extraPlan = rows.findIndex((e) => e.event === "PLAN_APPROVAL_RECORDED" && field(e.block, "Unit") === MATRIX_UNITS[1]);
+    if (done === -1) problems.push(`the review of ${MATRIX_UNITS[0]} the person asked for never completed`);
+    else if (extraPlan !== -1 && extraPlan < done) problems.push(`the review of ${MATRIX_UNITS[0]} ran only after the plan was approved`);
   }
 
   // What the person met because of the change.
