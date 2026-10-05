@@ -308,9 +308,17 @@ export function kiroTreeLayout(harnessRoot: string): KiroLayout | null {
  * Null means "not discoverable here", never a default harness: a command that
  * needs one still resolves it later and reports the error then. Other
  * discovery errors are rethrown.
+ *
+ * Codex sets CODEX_SESSION_ID in every shell command its model runs, so in a
+ * project that also holds another tool's install, a command Codex runs reads
+ * the Codex install instead of the first one found.
  */
 export function discoverableRuntimeHarnessDir(projectDir = runtimeProjectDir()): string | null {
   try {
+    if (!process.env.AIDLC_HARNESS_DIR?.trim() && process.env.CODEX_SESSION_ID?.trim()) {
+      const codex = discoverProjectHarnesses(projectDir).find((item) => item.distribution === "codex");
+      if (codex) return codex.harnessDir;
+    }
     return runtimeHarnessDir(projectDir);
   } catch (error) {
     if (["EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) return null;

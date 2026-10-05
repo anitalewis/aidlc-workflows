@@ -1794,6 +1794,80 @@ describe("t230 dispatcher dev and compiled in-process modes", () => {
     expect(labels.some((label) => label.includes(".claude/settings.json"))).toBe(false);
   });
 
+  test("compiled main run by Codex in a project that also holds Claude Code reads the Codex install", () => {
+    const projectDir = mkdtempSync(join(tmpdir(), "aidlc-t230-codex-beside-claude-"));
+    const machine = mkdtempSync(join(tmpdir(), "aidlc-t230-codex-beside-claude-machine-"));
+    tempProjects.add(projectDir);
+    tempProjects.add(machine);
+    cpSync(join(REPO_ROOT, "dist", "claude"), projectDir, { recursive: true });
+    cpSync(join(REPO_ROOT, "dist", "codex"), projectDir, { recursive: true });
+    const doctorLabels = (env: NodeJS.ProcessEnv): string[] => {
+      const result = viaImportedCompiledMain(
+        ["doctor", "--project-dir", projectDir, "--json"],
+        projectDir,
+        {
+          AIDLC_BIN_DIR: join(machine, "bin"),
+          AIDLC_DISPATCH_TOOLS_DIR: CORE_TOOLS_DIR,
+          AIDLC_HARNESS_DIR: "",
+          AIDLC_HARNESS_NAME: "",
+          AIDLC_INSTALL_ROOT: machine,
+          CODEX_SESSION_ID: "",
+          ...env,
+        },
+      );
+      const report = JSON.parse(result.stdout.toString()) as {
+        data: { checks: Array<{ label: string }> };
+      };
+      return report.data.checks.map((check) => check.label);
+    };
+    // Codex sets CODEX_SESSION_ID in every shell command its model runs.
+    const codex = doctorLabels({ CODEX_SESSION_ID: "019a0000-0000-7000-8000-000000000230" });
+    expect(codex.some((label) => label.startsWith("config.toml present"))).toBe(true);
+    expect(codex).not.toContain("settings.json present");
+    // Any other caller keeps the first install, as before.
+    const other = doctorLabels({});
+    expect(other).toContain("settings.json present");
+    expect(other.some((label) => label.startsWith("config.toml present"))).toBe(false);
+  });
+
+  test("a Codex session picks the project's Codex install only when there is one and no harness is named", () => {
+    const saved = { dir: process.env.AIDLC_HARNESS_DIR, session: process.env.CODEX_SESSION_ID };
+    const restore = (key: "AIDLC_HARNESS_DIR" | "CODEX_SESSION_ID", value: string | undefined) => {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    };
+    const writeHarness = (projectDir: string, distribution: string): void => {
+      const dataDir = join(projectDir, `.${distribution}`, "tools", "data");
+      mkdirSync(dataDir, { recursive: true });
+      writeFileSync(
+        join(dataDir, "harness.json"),
+        `${JSON.stringify({ schemaVersion: 1, distribution, harnessDir: `.${distribution}` })}\n`,
+      );
+    };
+    try {
+      delete process.env.AIDLC_HARNESS_DIR;
+      const both = mkdtempSync(join(tmpdir(), "aidlc-t230-codex-session-both-"));
+      const claudeOnly = mkdtempSync(join(tmpdir(), "aidlc-t230-codex-session-claude-"));
+      tempProjects.add(both);
+      tempProjects.add(claudeOnly);
+      writeHarness(both, "claude");
+      writeHarness(both, "codex");
+      writeHarness(claudeOnly, "claude");
+      delete process.env.CODEX_SESSION_ID;
+      expect(discoverableRuntimeHarnessDir(both)).toBe(".claude");
+      process.env.CODEX_SESSION_ID = "  ";
+      expect(discoverableRuntimeHarnessDir(both)).toBe(".claude");
+      process.env.CODEX_SESSION_ID = "019a0000-0000-7000-8000-000000000231";
+      expect(discoverableRuntimeHarnessDir(both)).toBe(".codex");
+      expect(discoverableRuntimeHarnessDir(claudeOnly)).toBe(".claude");
+      process.env.AIDLC_HARNESS_DIR = ".claude";
+      expect(discoverableRuntimeHarnessDir(both)).toBe(".claude");
+    } finally {
+      restore("AIDLC_HARNESS_DIR", saved.dir);
+      restore("CODEX_SESSION_ID", saved.session);
+    }
+  });
+
   test("a Kiro tree's layout comes from its declaration, then its row name, then its conductor", () => {
     // Each shipped row declares its layout in harness.json.
     expect(kiroTreeLayout(join(REPO_ROOT, "dist", "kiro", ".kiro"))).toBe("agent-v1");
