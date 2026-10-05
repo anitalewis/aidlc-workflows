@@ -67,6 +67,7 @@ import {
   codeGenerationRecordDir,
   evaluateCodeGenerationApproval,
   renderTestingContract,
+  resolveCodeGenerationAuthority,
   resolveTestingPosture,
 } from "../../dist/claude/.claude/tools/aidlc-testing-posture.ts";
 import {
@@ -82,12 +83,14 @@ import {
   planApprovalAskIsOpen,
   mintProtectedQuestion,
   planApprovalRuntimeFile,
+  readPlanApprovalReceipt,
   readProtectedResponse,
   stateDigest,
   workspaceSourceFingerprint,
   workspaceSourceListing,
   writeActiveDirectiveMarker,
   writeBaselineSourceSnapshot,
+  writePlanApprovalReceipt,
   writeSessionPidEntry,
 } from "../../dist/claude/.claude/tools/aidlc-lib.ts";
 import { appendAuditEntry } from "../../dist/claude/.claude/tools/aidlc-audit.ts";
@@ -2256,6 +2259,46 @@ describe("what the engine names while a plan waits", () => {
     mkdirSync(dirname(linked), { recursive: true });
     linkSync(join(proj, "src", "base.ts"), linked);
     expect(guardWrite(proj, linked).code).toBe(2);
+  });
+});
+
+// An approval an earlier AI-DLC recorded, in an earlier fingerprint format,
+// is still the person's approval: under a lowered Guard Policy an upgrade
+// mid-build builds the plan without asking again.
+describe("an approval recorded in an earlier fingerprint format", () => {
+  function recordedEarlier(proj: string): void {
+    const questionsPath = join(stageDir(proj), "code-generation-questions.md");
+    const questions = readFileSync(questionsPath, "utf-8");
+    const tag = /sha256:v3:[0-9a-f]{64}/.exec(questions)?.[0];
+    if (tag === undefined) throw new Error(`no current-format tag in ${questions}`);
+    const earlier = tag.replace("sha256:v3:", "sha256:v2:");
+    writeFileSync(questionsPath, questions.replaceAll(tag, earlier));
+    const authority = resolveCodeGenerationAuthority(proj, { unit: null });
+    const receipt = readPlanApprovalReceipt(proj, { targetId: authority.targetId, runFloor: authority.runFloor, fingerprint: tag });
+    if (receipt === null) throw new Error("no receipt for the approval");
+    writePlanApprovalReceipt(proj, { ...receipt, fingerprint: earlier });
+  }
+
+  test.each(["off", "relaxed"] as const)("under %s it builds the plan without asking again", (policy) => {
+    const proj = project(policy);
+    askFor(proj);
+    reply(proj, "1");
+    expect(auditText(proj)).toContain("**Event**: PLAN_APPROVAL_RECORDED");
+    recordedEarlier(proj);
+    const build = next(proj);
+    expect(build.kind, JSON.stringify(build)).toBe("run-stage");
+    const begun = posture(proj, "begin", null);
+    expect(begun.status, begun.stderr).toBe(0);
+  });
+
+  test("under strict the plan is asked about again", () => {
+    const proj = project("strict");
+    askFor(proj);
+    reply(proj, "1");
+    recordedEarlier(proj);
+    const asked = next(proj);
+    expect(asked.kind, JSON.stringify(asked)).toBe("ask");
+    expect(asked.ask_type).toBe("plan-approval");
   });
 });
 
