@@ -815,12 +815,13 @@ function speaksToPerson(directive: Directive): boolean {
 // what else it can ask for, once, with the first step it speaks from. The line
 // rides the engine's own narration: left to the protocol, it went unsaid.
 let pickingUp = false;
+const PICK_UP_LEAD = "Picking up where we left off, at ";
 function pickUpLine(directive: Directive): string | null {
   const step = directive as { stage?: unknown; unit?: unknown };
   const node = typeof step.stage === "string" ? nodeForSlug(step.stage) : undefined;
   if (!node) return null;
   const unit = typeof step.unit === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(step.unit) ? ` for ${step.unit}` : "";
-  return `Picking up where we left off, at ${stageLabel(node, node.slug) ?? node.slug}${unit}. ` +
+  return `${PICK_UP_LEAD}${stageLabel(node, node.slug) ?? node.slug}${unit}. ` +
     "If you'd rather redo it, go back to another stage, or start fresh, just say so.";
 }
 // A stage or question step says it itself, even one with no line of its own
@@ -856,9 +857,13 @@ function sayPendingPersonLines(requested: Directive, transported: Directive): ((
     }
     return undefined;
   }
-  if (!leadsToSpeech.has(requested) && !speaksToPerson(transported)) return undefined;
   const pending = pendingPersonLines(projectDir, sessionId);
   if (pending.lines.length === 0) return undefined;
+  // A kept pick-up line makes the stage or question step it reaches speak,
+  // even one with no line of its own (a waiting Unit checkpoint).
+  const pickUp = (transported.kind === "run-stage" || transported.kind === "ask") &&
+    pending.lines.some((line) => line.startsWith(PICK_UP_LEAD));
+  if (!pickUp && !leadsToSpeech.has(requested) && !speaksToPerson(transported)) return undefined;
   const own = transported.narration;
   transported.narration = [...pending.lines, ...(own ? [own] : [])].join(" ");
   if (Buffer.byteLength(JSON.stringify(transported), "utf-8") > directiveMaxBytes()) {
