@@ -1,4 +1,4 @@
-// covers: subcommand:aidlc-orchestrate:next, subcommand:aidlc-orchestrate:report, audit:GATE_APPROVED, audit:STAGE_AWAITING_APPROVAL
+// covers: subcommand:aidlc-orchestrate:next, subcommand:aidlc-orchestrate:report, audit:GATE_APPROVED, audit:STAGE_AWAITING_APPROVAL, function:approvesTogetherStages, function:approvedTogetherCover
 //
 // CLI-contract test: when Construction runs one Unit at a time (unit-major) and
 // Unit checkpoints are off, the per-Unit stages' approvals that come due after
@@ -18,7 +18,9 @@
 //   4. a change request approves nothing;
 //   5. a stage that cannot be approved yet stops there; fixed, it needs no new ask;
 //   6. checkpoints on, stage-major, and a lone remaining stage keep today's flow;
-//   7. no shipped prose still describes the late per-stage cascade.
+//   7. no shipped prose still describes the late per-stage cascade;
+//   8. a reply another question used, or a question put since, approves nothing;
+//   9. autonomous Construction and team-owned Units keep one turn, one gate.
 //
 // SOURCE UNDER TEST (dist/claude/.claude/tools/): aidlc-orchestrate.ts next and
 // report, aidlc-state.ts gate-start and approve, through the spawned engine.
@@ -41,6 +43,7 @@ import {
 } from "../harness/fixtures.ts";
 import { appendAuditEntry } from "../../dist/claude/.claude/tools/aidlc-audit.ts";
 import {
+  approvesTogetherStages,
   artifactFilename,
   auditBlockField,
   latestMainWorkflowStageRunFloorForProject,
@@ -142,6 +145,8 @@ interface Directive {
 function constructionState(opts: {
   checkpoints?: "enabled" | "disabled";
   stageMajor?: boolean;
+  autonomous?: boolean;
+  team?: boolean;
   current?: string;
   checkboxes?: string;
 }): string {
@@ -154,6 +159,8 @@ function constructionState(opts: {
 - [ ] build-and-test ${SEP} EXECUTE`;
   const iteration = opts.stageMajor ? "" : "- **Construction Iteration**: unit-major\n";
   const checkpoints = opts.checkpoints ? `- **Construction Checkpoints**: ${opts.checkpoints}\n` : "";
+  const autonomy = opts.autonomous ? "- **Construction Autonomy Mode**: autonomous\n" : "";
+  const team = opts.team ? "- **Unit Ownership**: team\n" : "";
   return `# AI-DLC State Tracking
 
 ## Project Information
@@ -165,7 +172,7 @@ function constructionState(opts: {
 
 ## Runtime State
 - **Revision Count**: 0
-${iteration}${checkpoints}
+${iteration}${checkpoints}${autonomy}${team}
 ## Scope Configuration
 - **Stages to Execute**: all
 - **Stages to Skip**: none
@@ -262,10 +269,11 @@ function seedBuiltProject(
     for (const stage of BLOCK) coverUnit(proj, unit, stage);
   }
   for (const unit of UNITS) {
+    // Built first, so each review is of the files as they stand.
+    buildUnit(proj, unit);
     for (const stage of BLOCK) {
       if (!unreviewed.some(([s, u]) => s === stage && u === unit)) logReviewReady(proj, stage, unit);
     }
-    buildUnit(proj, unit);
   }
   return proj;
 }
@@ -301,6 +309,20 @@ function runReport(proj: string, args: string[]): Directive {
   } catch {
     throw new Error(`report did not emit parseable JSON. status=${r.status}\n${r.stdout}\n${r.stderr}`);
   }
+}
+
+// The agent puts a question to the person (log decision); with `answered`, the
+// person's latest reply answers it (log answer).
+function logQuestion(proj: string, stage: string, answered: boolean): void {
+  const opts = { timeout: remainingOperationTimeoutMs(NATIVE_STARTUP_TIMEOUT_MS), encoding: "utf-8" as const, env: engineEnv() };
+  const asked = spawnSync(BUN, [
+    LOG, "decision", "--stage", stage, "--decision", "Which name should the order entity use?",
+    "--options", "Order,Purchase", "--project-dir", proj,
+  ], opts);
+  if ((asked.status ?? -1) !== 0) throw new Error(`log decision failed: ${asked.stdout ?? ""}${asked.stderr ?? ""}`);
+  if (!answered) return;
+  const answer = spawnSync(BUN, [LOG, "answer", "--stage", stage, "--details", "Purchase", "--project-dir", proj], opts);
+  if ((answer.status ?? -1) !== 0) throw new Error(`log answer failed: ${answer.stdout ?? ""}${answer.stderr ?? ""}`);
 }
 
 // The person replies, as the prompt hook records it.
@@ -341,14 +363,19 @@ describe("t-late-design-gates-one-approval: one question for the late stage appr
     expect(runNext(proj).approve_together?.prompt).toBe(ONE_QUESTION);
   });
 
-  test("2: opening that gate names the stage after the last one listed", () => {
+  test("2: the gate's record and its question name the same stages; the next stage follows the last", () => {
     const proj = seedBuiltProject({ checkpoints: "disabled" });
-    const { opened } = openFirstGate(proj);
+    const { gate, opened } = openFirstGate(proj);
     expect(opened.kind).toBe("print");
     expect(opened.next_stage).toBe("Build and Test");
     const open = rows(proj, "STAGE_AWAITING_APPROVAL").filter((r) => r.stage === "functional-design");
     expect(open.length).toBe(1);
-    expect(auditBlockField(open[0].block, "Approves Together")).toBe(BLOCK.join(", "));
+    const recorded = (auditBlockField(open[0].block, "Approves Together") ?? "").split(", ");
+    // Both come from the engine: the record lists exactly the stages the question names.
+    expect(recorded).toEqual(gate.approve_together?.stages?.map((s) => s.slug ?? "") ?? []);
+    const names = gate.approve_together?.stages?.map((s) => s.name) ?? [];
+    expect(gate.approve_together?.prompt?.startsWith(`${names.slice(0, -1).join(", ")} and ${names.at(-1)} are complete`))
+      .toBe(true);
   });
 
   test("3: one reply and one approval approve every listed stage with the person's words", () => {
@@ -373,7 +400,7 @@ describe("t-late-design-gates-one-approval: one question for the late stage appr
     personReplies(proj);
     const reply = runReport(proj, [
       "--stage", "functional-design", "--result", "rejected",
-      "--user-input", "Request Changes: name the order entity Purchase",
+      "--user-input", "Request Changes", "--reason", "name the order entity Purchase",
     ]);
     expect(reply.kind).not.toBe("error");
     expect(rows(proj, "GATE_APPROVED").length).toBe(0);
@@ -396,6 +423,47 @@ describe("t-late-design-gates-one-approval: one question for the late stage appr
     expect(fixed.kind).toBe("done");
     expect(rows(proj, "GATE_APPROVED").map((r) => r.stage)).toEqual(BLOCK);
     expect(currentStage(proj)).toBe("build-and-test");
+  });
+
+  test("8: a reply used by another question, or a question put since, approves nothing from the list", () => {
+    // The person's reply answered a different question before the gate opened.
+    const before = seedBuiltProject({ checkpoints: "disabled" });
+    personReplies(before);
+    logQuestion(before, "functional-design", true);
+    openFirstGate(before);
+    const refused = runReport(before, ["--stage", "functional-design", "--result", "approved", "--user-input", "Approve"]);
+    expect(refused.kind).not.toBe("done");
+    expect(rows(before, "GATE_APPROVED").length).toBe(0);
+
+    // A question put since the approval ends what the approval covers.
+    const since = seedBuiltProject({ checkpoints: "disabled" }, [["nfr-design", "beta"]]);
+    openFirstGate(since);
+    personReplies(since);
+    runReport(since, ["--stage", "functional-design", "--result", "approved", "--user-input", "Approve"]);
+    expect(rows(since, "GATE_APPROVED").map((r) => r.stage)).toEqual(["functional-design", "nfr-requirements"]);
+    logReviewReady(since, "nfr-design", "beta");
+    logQuestion(since, "nfr-design", false);
+    const later = runReport(since, ["--stage", "nfr-design", "--result", "approved", "--user-input", "Approve"]);
+    expect(later.kind).not.toBe("done");
+    expect(rows(since, "GATE_APPROVED").length).toBe(2);
+  });
+
+  test("9: autonomous Construction and team-owned Units keep one turn, one gate", () => {
+    const autonomous = seedBuiltProject({ checkpoints: "disabled", autonomous: true });
+    const gate = runNext(autonomous);
+    expect(gate.approve_together).toBeUndefined();
+    runReport(autonomous, ["--stage", "functional-design", "--result", "awaiting-approval"]);
+    personReplies(autonomous);
+    runReport(autonomous, ["--stage", "functional-design", "--result", "approved", "--user-input", "Approve"]);
+    expect(rows(autonomous, "GATE_APPROVED").map((r) => r.stage)).toEqual(["functional-design"]);
+    expect(currentStage(autonomous)).toBe("nfr-requirements");
+
+    // Team-owned Units answer their own Unit gates; none is ever one question.
+    expect(approvesTogetherStages(constructionState({ checkpoints: "disabled", team: true }), "functional-design"))
+      .toBeNull();
+    expect(approvesTogetherStages(constructionState({ checkpoints: "disabled", autonomous: true }), "functional-design"))
+      .toBeNull();
+    expect(approvesTogetherStages(constructionState({ checkpoints: "disabled" }), "functional-design")).toEqual(BLOCK);
   });
 
   test("6: checkpoints on, stage-major and a lone remaining stage keep their own flow", () => {

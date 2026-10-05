@@ -1664,15 +1664,22 @@ describe("t342 a unit-major recovery keeps every Unit's finished work", () => {
       if (!options.legacy) approve(p, unit);
     }
     for (const slug of stages.slice(0, stages.indexOf(through))) {
+      // With Unit checkpoints off one approval covers the late stage
+      // approvals, so a later stage may already be approved.
+      if (new RegExp(`^- \\[x\\] ${slug} `, "m").test(readFileSync(seededStateFile(p), "utf-8"))) continue;
       for (const result of ["awaiting-approval", "approved"]) {
         const report = tool(p, "orchestrate", [
           "report", "--stage", slug, "--result", result, "--user-input", "Approve",
         ]);
         expect(report.status, report.out).toBe(0);
-        expect(JSON.parse(report.stdout).kind, report.out).not.toBe("error");
+        if (!options.legacy) expect(JSON.parse(report.stdout).kind, report.out).not.toBe("error");
       }
     }
-    expect(readFileSync(seededStateFile(p), "utf-8")).toContain(`- **Current Stage**: ${through}`);
+    const state = readFileSync(seededStateFile(p), "utf-8");
+    for (const slug of stages.slice(0, stages.indexOf(through))) {
+      expect(state).toMatch(new RegExp(`^- \\[x\\] ${slug} `, "m"));
+    }
+    if (!options.legacy) expect(state).toContain(`- **Current Stage**: ${through}`);
     return p;
   }
 

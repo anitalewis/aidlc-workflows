@@ -35954,6 +35954,118 @@ export function unitMajorConstructionStageSlugs(
     .map((stage) => stage.slug);
 }
 
+// The per-Unit stages one late approval covers: solo unit-major work with Unit
+// checkpoints off (disabled or absent), not autonomous, at the first pending
+// block stage, when two or more remain. Null keeps the ordinary one-stage gate.
+// Both the gate's question and its STAGE_AWAITING_APPROVAL row come from this
+// list, so the person approves exactly the stages they were shown.
+export function approvesTogetherStages(stateContent: string, slug: string): string[] | null {
+  if (
+    getField(stateContent, "Construction Iteration")?.trim() !== "unit-major" ||
+    isTeamUnitOwnership(stateContent) ||
+    constructionCheckpointsApply(stateContent) ||
+    getField(stateContent, AUTONOMY_MODE_FIELD)?.trim() === "autonomous" ||
+    getField(stateContent, "Current Stage")?.trim() !== slug
+  ) return null;
+  const scope = getField(stateContent, "Scope")?.trim() ?? "";
+  if (usesStageLevelPerUnitArtifacts(scope, stateContent)) return null;
+  const block = unitMajorConstructionStageSlugs(scope, stateContent);
+  return block[0] === slug && block.length >= 2 ? block : null;
+}
+
+const APPROVES_TOGETHER_FIELD = "Approves Together";
+const APPROVED_TOGETHER_WITH_FIELD = "Approved Together With";
+
+export function approvesTogetherField(block: string): string[] {
+  return (auditBlockField(block, APPROVES_TOGETHER_FIELD) ?? "")
+    .split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+}
+
+// Since this approval, anything that asks the person something new, takes a
+// decision, or moves the work elsewhere ends what it covers.
+const APPROVED_TOGETHER_ENDS = new Set([
+  "GATE_REJECTED",
+  "QUESTION_ANSWERED",
+  "QUESTION_UNANSWERED",
+  "DECISION_RECORDED",
+  "AUTONOMY_MODE_SET",
+  "WORKFLOW_STARTED",
+  "STAGE_JUMPED",
+]);
+
+// A later listed stage's approval stands on the person's one reply while the
+// approval that listed it still covers it: no question, rejection or decision
+// since, and no gate for a stage outside the list. Ledger order only.
+export function approvedTogetherCover(
+  projectDir: string,
+  slug: string,
+): { first: string } | null {
+  let rows: AuditShardEvent[];
+  try {
+    rows = sortAttemptEvents(readAuditShardEvents(projectDir));
+  } catch {
+    return null;
+  }
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i];
+    if (row.event !== "GATE_APPROVED") continue;
+    const listed = approvesTogetherField(row.block);
+    const first = auditBlockField(row.block, "Stage");
+    if (!first || first === slug || !listed.includes(slug)) continue;
+    for (const later of rows.slice(i + 1)) {
+      if (APPROVED_TOGETHER_ENDS.has(later.event)) return null;
+      if (later.event !== "GATE_APPROVED" && later.event !== "STAGE_AWAITING_APPROVAL") continue;
+      const stage = auditBlockField(later.block, "Stage") ?? "";
+      if (!listed.includes(stage)) return null;
+      if (later.event === "GATE_APPROVED" && stage === slug) return null;
+    }
+    return { first };
+  }
+  return null;
+}
+
+// The list the stage's open gate was shown with (its latest STAGE_AWAITING_APPROVAL).
+export function openGateApprovesTogether(projectDir: string, slug: string): string[] {
+  try {
+    const rows = sortAttemptEvents(readAuditShardEvents(projectDir));
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const row = rows[i];
+      if (row.event === "STAGE_AWAITING_APPROVAL" && auditBlockField(row.block, "Stage") === slug) {
+        return approvesTogetherField(row.block);
+      }
+    }
+  } catch {
+    // An unreadable ledger approves the one stage only.
+  }
+  return [];
+}
+
+// The listed stages still to approve after the stage approval just recorded:
+// from its own list, or from the approval that covered it.
+export function approvedTogetherFollowers(projectDir: string, slug: string): string[] {
+  try {
+    const rows = sortAttemptEvents(readAuditShardEvents(projectDir));
+    const latest = (stage: string) =>
+      [...rows].reverse().find((row) => row.event === "GATE_APPROVED" && auditBlockField(row.block, "Stage") === stage);
+    const own = latest(slug);
+    if (!own) return [];
+    const first = auditBlockField(own.block, APPROVED_TOGETHER_WITH_FIELD);
+    const list = approvesTogetherField((first ? latest(first) : own)?.block ?? "");
+    const at = list.indexOf(slug);
+    return at === -1 ? [] : list.slice(at + 1);
+  } catch {
+    return [];
+  }
+}
+
+export function approvedTogetherWithField(first: string): Record<string, string> {
+  return { [APPROVED_TOGETHER_WITH_FIELD]: first };
+}
+
+export function approvesTogetherFields(stages: readonly string[]): Record<string, string> {
+  return stages.length >= 2 ? { [APPROVES_TOGETHER_FIELD]: stages.join(", ") } : {};
+}
+
 export function firstInScopeStageOfPhase(
   phase: string,
   scope: string
