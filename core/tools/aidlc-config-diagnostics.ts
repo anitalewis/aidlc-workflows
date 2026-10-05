@@ -2636,7 +2636,22 @@ export type ConfigOutstandingAction = {
   id: string;
   message: string;
   command: string;
+  // What the person does in their own tool when no AI-DLC command does it.
+  // Shown in place of the command; `command` then only checks the result.
+  step?: string;
 };
+
+// Codex runs a project's hooks only once the person trusts them inside Codex,
+// the same step the hooks-off stop and doctor name. AI-DLC's own trust review
+// is a different thing, so this step never points at it.
+export const CODEX_HOOK_TRUST_UNMET = "Codex has not trusted this project's hooks yet";
+export const CODEX_HOOK_TRUST_STEP = "in Codex, type /hooks, press t to trust all, then press Esc";
+const CODEX_HOOK_TRUST_IDS = new Set(["codex-hook-trust-missing", "codex-hook-trust-incomplete"]);
+
+/** Codex's own hook-trust step for an issue it alone can fix, else null. */
+export function codexHookTrustStep(issueId: string): string | null {
+  return CODEX_HOOK_TRUST_IDS.has(issueId) ? CODEX_HOOK_TRUST_STEP : null;
+}
 
 // The runtimes this shell finds that the system-wide PATH does not. A harness
 // started from this terminal hands them to its hooks, so setup lists no step
@@ -2689,12 +2704,23 @@ export function postApplyOutstandingActions(
       harnessDir,
       harness,
       options.env,
-    ).issues.map((issue) => ({
-      section: "trust" as const,
-      id: issue.id,
-      message: issue.message,
-      command: `${invoke} config trust`,
-    })));
+    ).issues.map((issue) => {
+      const step = codexHookTrustStep(issue.id);
+      return step
+        ? {
+            section: "trust" as const,
+            id: issue.id,
+            message: CODEX_HOOK_TRUST_UNMET,
+            command: `${invoke} config trust --check`,
+            step,
+          }
+        : {
+            section: "trust" as const,
+            id: issue.id,
+            message: issue.message,
+            command: `${invoke} config trust`,
+          };
+    }));
   }
   if (!skipped.has("providers")) {
     try {
