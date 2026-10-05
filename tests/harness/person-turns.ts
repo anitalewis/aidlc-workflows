@@ -251,14 +251,15 @@ export function unbackedDecisions(projectDir: string, start: AuditCursor, turns:
         autonomous = false;
         approvedUnits.clear();
       }
+      // A Unit's approval stands until a rejection names the Unit (a reopen
+      // carries no Checkpoint) or a jump moves the work.
       const unit = auditBlockField(row.block, "Unit");
-      if (gate && checkpoint !== null && unit !== null) {
-        if (row.event === "GATE_REJECTED") approvedUnits.delete(unit);
-        else {
-          const stages = (auditBlockField(row.block, "Gate Stages") ?? "").split(",").map((part) => part.trim());
-          approvedUnits.set(unit, new Set(stages.filter((name) => name.length > 0)));
-        }
+      if (row.event === "GATE_REJECTED" && unit !== null) approvedUnits.delete(unit);
+      else if (gate && checkpoint !== null && unit !== null) {
+        const stages = (auditBlockField(row.block, "Gate Stages") ?? "").split(",").map((part) => part.trim());
+        approvedUnits.set(unit, new Set(stages.filter((name) => name.length > 0)));
       }
+      if (row.event === "STAGE_JUMPED") approvedUnits.clear();
       if (row.event === "AUTONOMY_MODE_SET") autonomous = auditBlockField(row.block, "Mode") === "autonomous";
       if (gate) resolved = index;
     }

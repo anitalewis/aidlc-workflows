@@ -383,7 +383,7 @@ describe("person-turn check", () => {
     expect(drive.unbacked()[1]).toContain("GATE_APPROVED functional-design");
   });
 
-  test("with two Units the engine settles a stage only after both checkpoints are approved; a rejection and a reopening count", () => {
+  test("with two Units the engine settles a stage only after both checkpoints are approved; a rejection, a reopen and a jump count", () => {
     const dir = project();
     seedBoltDag(dir, ["core", { name: "extra", depends_on: ["core"] }]);
     const drive = new PersonTurnLedger(dir);
@@ -411,6 +411,18 @@ describe("person-turn check", () => {
     checkpoint("extra", "GATE_APPROVED", "Approve");
     stageGate();
     expect(drive.unbacked()).toHaveLength(2);
+    // A reopen names the Unit with no Checkpoint, and a jump moves the work: each takes the approvals back.
+    drive.sent("reopen core, the totals are wrong");
+    row(dir, "GATE_REJECTED", { Stage: "code-generation", Unit: "core", "Gate Stages": "code-generation", Feedback: "the totals are wrong" });
+    stageGate();
+    expect(drive.unbacked()).toHaveLength(3);
+    checkpoint("core", "GATE_APPROVED", "Approve");
+    stageGate();
+    expect(drive.unbacked()).toHaveLength(3);
+    drive.sent("go back to requirements");
+    row(dir, "STAGE_JUMPED", { From: "code-generation", To: "requirements-analysis" });
+    stageGate();
+    expect(drive.unbacked()).toHaveLength(4);
   });
 
   test("a gate in a single-stage run is not opened by the main workflow's gate", () => {
