@@ -53,8 +53,9 @@ Continue from the last incomplete stage: a bare `/aidlc` and `/aidlc --resume`
 both carry on, with no resume menu. The first step you show after picking the
 work back up carries the pick-up line in its `narration` ("Picking up where we
 left off, at ... If you'd rather redo it, go back to another stage, or start
-fresh, just say so."): say it as written, at the start of that message, and add
-no line of your own about picking up.
+fresh, just say so."): say it as written, at the start of that message (at an
+approval gate too, right before its question), and add no line of your own
+about picking up.
 
 Redo, a jump, or a fresh start happens only when the person asks for one. Read
 which one they mean from their words and report it with
