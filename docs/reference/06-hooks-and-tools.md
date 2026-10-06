@@ -110,13 +110,17 @@ Typed in the same message as a request, it goes with that request
 (`Guard Policy relaxed for the work you are asking for (set by you).`): new work
 takes it at creation, and an answer that continues open work applies it there.
 The message alone never changes open work's policy.
+The requested `off` value replaces `relaxed` as appropriate.
 Sensors, learnings and summary confirmation typed with a request, or with no
 state file, are kept the same way, with no line of their own, so the creation
 that answers that request labels them `set by you`.
-A fence switch with no state file is refused with
-`Guard Policy relaxed and fence switches apply to a piece of work: create it, then type this again.`
-The requested `off` value or `guard.<fence> off` wording replaces `relaxed` as
-appropriate.
+A fence switch (`guard.<fence> off`) is kept the same way, in its own record
+for the chat:
+`The review freeze check is off for the piece of work you start now (set by you).`
+with no state file, and
+`The review freeze check is off for the work you are asking for (set by you).`
+typed with a request. `guard.<fence> on`, or Guard Policy `strict`, typed
+before the work exists withdraws it.
 Memory-held strict refuses with the memory file named; otherwise the hook
 uses `applyIntentSettings` with `typedByPerson: true` under the audit lock,
 appends the audit rows, and writes state.

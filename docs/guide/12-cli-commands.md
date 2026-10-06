@@ -1223,13 +1223,16 @@ starts next: `Guard Policy relaxed for the piece of work you start now (set by y
 Typed with a request, it goes with that request
 (`Guard Policy relaxed for the work you are asking for (set by you).`): new work
 takes it at creation, and continuing open work applies it there; the message
-alone never changes open work. The one exception is while the code plan question
+alone never changes open work. The `off` form names `off` instead of `relaxed`.
+A fence switch (`guard.<fence> off`) works the same way:
+`The review freeze check is off for the piece of work you start now (set by you).`
+before the work exists, and
+`The review freeze check is off for the work you are asking for (set by you).`
+typed with a request. The one exception is while the code plan question
 is open and the person is not editing the plan files: then a setting typed with
 words is for this work, and the words are the reply to that question
 (`/aidlc --guard-policy off approve the plan`). Words after an unquoted `--`
-still describe new work. A fence switch with no state file receives:
-`Guard Policy relaxed and fence switches apply to a piece of work: create it, then type this again.`
-The `off` form names `off` instead of `relaxed`.
+still describe new work.
 Hooks run on Windows too, so the typed switch works on every harness that
 forwards the prompt without a setter-side session lookup.
 An unrelated reply opens nothing, and `AIDLC_UNATTENDED=1` suppresses prompt-time
@@ -1388,8 +1391,10 @@ Asking in your own words, or picking a guard's `lower-fence` choice, works too:
 the agent runs the setter for that fence and says in one line what changed.
 Both forms accept `--intent <name>` and `--space <name>`; omitted selectors use
 the hook payload session's workflow selection.
-A nonexistent named intent is refused, and a selection without a state file
-must be created before the person types the switch again.
+A nonexistent named intent is refused. With no state file yet, the switch is
+kept for the piece of work this chat starts next; typed with a request
+(`/aidlc --guard.<fence> off <description>`), it goes with that request and
+never changes the open work.
 The CLI setters lower a fence when a person's turn is on record since the last
 decision (an empty ledger does not count); an already-off fence is a no-op and
 needs no key.

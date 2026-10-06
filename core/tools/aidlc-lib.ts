@@ -37260,6 +37260,8 @@ export function parseTypedGuardSwitchRequest(prompt: string, options: { wordsAns
   newWorkGuardPolicy?: "relaxed" | "off";
   /** Sensors, learnings or summary confirmation typed as flags of the new work the message describes. */
   newWorkCeremonies?: Record<string, "on" | "off">;
+  /** `--guard.<fence> off` typed as flags of the new work the message describes. */
+  newWorkFencesOff?: SwitchableGuardFence[];
   /** The plain-words switch asked as a question ("skip plan approval?"). */
   asked?: true;
   /** The words typed after the flags, when there are any. */
@@ -37437,6 +37439,14 @@ export function parseTypedGuardSwitchRequest(prompt: string, options: { wordsAns
     switches.delete("guard-policy");
     settings.delete("guard-policy");
   }
+  // So is a check turned off with it.
+  const newWorkFencesOff: SwitchableGuardFence[] = [];
+  for (const fence of SWITCHABLE_GUARD_FENCES) {
+    if (!forNewWork || fence === "plan-approval" || !switches.has(`guard.${fence}`)) continue;
+    newWorkFencesOff.push(fence);
+    switches.delete(`guard.${fence}`);
+    settings.delete(`guard.${fence}`);
+  }
   return {
     switches: [...switches.values()],
     settings: [...settings].map(([key, value]) => ({ key, value })),
@@ -37447,6 +37457,7 @@ export function parseTypedGuardSwitchRequest(prompt: string, options: { wordsAns
     ...(newWorkPlanApprovalOff ? { newWorkPlanApprovalOff: true as const } : {}),
     ...(newWorkGuardPolicy ? { newWorkGuardPolicy } : {}),
     ...(Object.keys(newWorkCeremonies).length > 0 ? { newWorkCeremonies } : {}),
+    ...(newWorkFencesOff.length > 0 ? { newWorkFencesOff } : {}),
     ...(words.length > 0 ? { words: words.join(" ") } : {}),
   };
 }

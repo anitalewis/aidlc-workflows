@@ -156,6 +156,10 @@ import {
   CHANGE_CONTROL_FIELD,
   CEREMONY_FLAGS,
   CEREMONY_KEYS,
+  guardFenceFromConfigKey,
+  memoryGuardPolicyDeclarations,
+  SWITCHABLE_GUARD_FENCES,
+  type SwitchableGuardFence,
   type CeremonyPolicy,
   ceremonyOffClause,
   ceremonyOffList,
@@ -439,6 +443,9 @@ import {
 } from "./aidlc-plan-approval-ask.ts";
 import { codeGenerationResumeNarration, codeGenerationStartNarration, promotableTestingPosture } from "./aidlc-testing-posture.ts";
 import {
+  checksAre,
+  checksNamed,
+  fencesOffCreationGranted,
   guardPolicyCreationGranted,
   planApprovalOffAtCreation,
   planApprovalEnv,
@@ -2005,6 +2012,9 @@ function typedSettingModifiers(flags: ParsedFlags): string[] {
       modifiers.push(`${CEREMONY_FLAGS[key].slice(2)} ${flags.ceremony[key]}`);
     }
   }
+  for (const fence of SWITCHABLE_GUARD_FENCES) {
+    if (flags.fences?.[fence]) modifiers.push(`guard.${fence} ${flags.fences[fence]}`);
+  }
   return modifiers;
 }
 
@@ -2057,6 +2067,10 @@ function carriedRoutingFlags(flags: ParsedFlags): RoutingCarried {
   // The human-turn hook keeps a lowered Guard Policy typed with the request
   // off the open work, so it rides every answer and lands on the work picked.
   if (flags.changeControl) extra.push(`--guard-policy ${flags.changeControl}`);
+  // So does a check typed with it.
+  for (const fence of SWITCHABLE_GUARD_FENCES) {
+    if (flags.fences?.[fence]) extra.push(`--guard.${fence} ${flags.fences[fence]}`);
+  }
   const existingWork = `${carriedCreationFlags(flags)}${extra.length > 0 ? ` ${extra.join(" ")}` : ""}`;
   const stages: string[] = [];
   if (flags.planChanges?.skip.length) stages.push(`--skip ${flags.planChanges.skip.join(",")}`);
@@ -2103,6 +2117,7 @@ function fillStoredSettings(flags: ParsedFlags, question: StoredQuestion): boole
   // that differs from the active work's), whether they ran its command or
   // replied with its number or label.
   if (flags.continue === true && kept.scope) flags.scope ??= kept.scope;
+  if (kept.fences) flags.fences = { ...kept.fences, ...flags.fences };
   if (kept.ceremony) flags.ceremony = { ...kept.ceremony, ...flags.ceremony };
   if (!existing && !flags.planChanges && kept.planChanges) {
     flags.planChanges = kept.planChanges;
@@ -3298,6 +3313,7 @@ interface ParsedFlags {
   projectType?: "greenfield" | "brownfield"; // --project-type: the person's word on new project vs existing code
   review?: string; // --review <adversarial|advisory|none>: per-run review-class override
   changeControl?: string; // --guard-policy <strict|relaxed|off> (retired spelling --change-control): the per-intent Guard Policy
+  fences?: Partial<Record<SwitchableGuardFence, "on" | "off">>; // --guard.<fence> <on|off>: a check for this piece of work
   ceremony?: Partial<CeremonyPolicy>;
   planChanges?: PlanChanges; // --skip/--add <stage,...>: a new workflow's own stage changes to its scope's grid
   planName?: string; // --plan-name <name>: the tailored plan's name, as the person saw it at the gate
@@ -3617,6 +3633,27 @@ function parseNextFlags(argv: string[]): ParsedFlags {
             `${a} requires <strict|relaxed|off>; received "${value}".`;
         } else {
           flags.changeControl = parsed;
+        }
+        i++;
+      }
+    } else if (a.startsWith("--") && guardFenceFromConfigKey(a.slice(2)) !== null) {
+      // A check typed for this piece of work (`--guard.review-freeze off`), never
+      // part of the request. `guard.plan-approval` is another way to say plan approval.
+      const fence = guardFenceFromConfigKey(a.slice(2))!;
+      const value = args[i + 1];
+      const word = value?.toLowerCase();
+      if (value === undefined || value.startsWith("--")) {
+        flags.parseError = `${a} requires <on|off>.`;
+      } else if (word !== "on" && word !== "off") {
+        flags.parseError = `${a} requires <on|off>; received "${value}".`;
+        i++;
+      } else {
+        if (fence === "plan-approval") {
+          flags.ceremony ??= {};
+          flags.ceremony.plan_approval = word;
+        } else {
+          flags.fences ??= {};
+          flags.fences[fence] = word;
         }
         i++;
       }
@@ -3997,6 +4034,37 @@ function routedGuardPolicyNote(flags: ParsedFlags, projectDir: string, question:
     ? `Guard Policy ${value} is on for "${activeWorkLabel(askedState)}" (you typed it with the request); ` +
       `the new work starts at the default. Say '${words} here too' to change it.`
     : `The new work starts at the default Guard Policy, not the ${value} you typed with the request. Say '${words}' to change it.`;
+}
+
+// New work picked on a routing question with checks typed off: the person's
+// words typed with the request are that work's, and creation applies them.
+function routedFencesNote(flags: ParsedFlags, projectDir: string, question: StoredQuestion): string {
+  const typed = SWITCHABLE_GUARD_FENCES.filter((fence) => flags.fences?.[fence] === "off");
+  if (typed.length === 0) return "";
+  let session: string | null = null;
+  try {
+    session = resolveInvokingSessionId(projectDir);
+  } catch {
+    session = null;
+  }
+  const kept = fencesOffCreationGranted(projectDir, session, question.id);
+  const off = typed.filter((fence) => kept.includes(fence));
+  const on = typed.filter((fence) => !kept.includes(fence));
+  const lines = off.length > 0 ? [`${checksAre(off)} off for the new work (set by you).`] : [];
+  // A team's strict Guard Policy keeps them on, and the person heard so when they typed it.
+  let locked = false;
+  try {
+    locked = memoryGuardPolicyDeclarations(projectDir, { sessionId: session ?? undefined })
+      .some((declaration) => declaration.value === "strict");
+  } catch {
+    locked = true;
+  }
+  if (on.length > 0 && !locked) {
+    const named = checksNamed(on);
+    lines.push(`The new work starts with the ${named} on, not off as you typed with the request. ` +
+      `Say 'turn the ${named} off' to change it.`);
+  }
+  return lines.join(" ");
 }
 
 // The composer-dispatch print for a compose request (the adaptive-workflows
@@ -7372,7 +7440,9 @@ function routeNext(args: string[], projectDir: string | undefined): void {
       flags,
       pd,
       description,
-      question?.origin === "routing" ? routedGuardPolicyNote(flags, pd, question) : undefined,
+      question?.origin === "routing"
+        ? [routedGuardPolicyNote(flags, pd, question), routedFencesNote(flags, pd, question)].filter(Boolean).join(" ")
+        : undefined,
     ));
     return;
   }

@@ -47,8 +47,10 @@ import {
   type ConfigKey,
   ceremoniesCreationGranted,
   consumeCeremoniesCreationGrant,
+  consumeFencesOffCreationGrant,
   consumeGuardPolicyCreationGrant,
   consumePlanApprovalCreationGrant,
+  fencesOffCreationGranted,
   guardPolicyCreationGranted,
   formatPlanApprovalSetting,
   type IntentSettingsRequest,
@@ -7674,6 +7676,10 @@ function handleIntentCreate(projectDir: string, flags: Record<string, string>): 
   const guardPolicyAsked = preflightMemoryStrict === null
     ? guardPolicyCreationGranted(projectDir, initialSelection.sessionId, questionId ?? null) : null;
   consumeGuardPolicyCreationGrant(projectDir, initialSelection.sessionId);
+  // So are the checks they turned off with it, or before it.
+  const fencesAsked = preflightMemoryStrict === null
+    ? fencesOffCreationGranted(projectDir, initialSelection.sessionId, questionId ?? null) : [];
+  consumeFencesOffCreationGrant(projectDir, initialSelection.sessionId);
   const wantedChangeControl = flaggedChangeControl ?? guardPolicyAsked;
   const guardPolicySetByPerson = guardPolicyAsked !== null && wantedChangeControl === guardPolicyAsked;
   const requestedChangeControl =
@@ -8025,6 +8031,17 @@ function handleIntentCreate(projectDir: string, flags: Record<string, string>): 
       ceremonySetByPerson,
       composedPlan ? plannedStages.stages : null,
     );
+    // The checks the person turned off for this work start off, set by them.
+    if (fencesAsked.length > 0 && lockedMemoryStrict === null) {
+      const content = readStateFile(projectDir, created.dirName, created.space);
+      const requested: IntentSettingsRequest = {};
+      for (const fence of fencesAsked) requested[`guard.${fence}`] = { value: "off", source: "you" };
+      const update = applyIntentSettings(projectDir, content, requested, {
+        intent: created.dirName, space: created.space, sessionId: initialSelection.sessionId, typedByPerson: true,
+      });
+      if (update.audit.length > 0) appendAuditEntries(update.audit, projectDir, created.dirName, created.space);
+      if (update.content !== content) writeStateFile(projectDir, update.content, created.dirName, created.space);
+    }
     // The commit point: list the finished record with the question it answered,
     // then select it. The question's copy is no longer needed once listed.
     registerIntentRecord(

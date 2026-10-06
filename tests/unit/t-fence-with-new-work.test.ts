@@ -164,8 +164,9 @@ describe("a fence switch typed with a request beside open work", () => {
   test("new work picked: it starts with the check off, the person hears so, and the open work is untouched", () => {
     const { proj, open } = oneOpenRecord();
     const openBefore = readFileSync(join(intents(proj), open, "aidlc-state.md"), "utf-8");
-    reply(proj, TYPED);
-    const routing = next(proj, ["--guard.review-freeze", "off", "fix", "the", "parser"]);
+    // A strict plan for the new work, so the check is on until the switch turns it off.
+    reply(proj, "/aidlc --guard.review-freeze off enterprise fix the parser");
+    const routing = next(proj, ["--guard.review-freeze", "off", "enterprise", "fix", "the", "parser"]);
     const ask = routing.directive as { ask_type?: string; new_work_description?: string; new_intent_command?: string } | null;
     expect(ask?.ask_type, routing.out).toBe("new-work-routing");
     // The switch is not part of what the person asked for.
