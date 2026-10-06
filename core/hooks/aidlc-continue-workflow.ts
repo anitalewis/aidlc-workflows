@@ -991,7 +991,8 @@ function isCarryingOnLine(text: string): boolean {
 // injected continuation (a re-prompt after a block), not the human talking.
 // Two shapes: Claude Code wraps the block reason as "Stop hook feedback: ..."
 // (isMeta:true), but other harnesses (Codex) may re-inject the RAW reason text
-// with no wrapper. continuationReason() writes one carrying-on line, and
+// with no wrapper, or (Codex 0.160) in its own <hook_prompt> tag, which is
+// unwrapped first. continuationReason() writes one carrying-on line, and
 // errorDirectiveReason() opens with STOPPED_ON_A_PROBLEM. Excluding these is
 // what keeps an engine-engaged turn whose last user entry is the hook's nudge
 // from being misread as a fresh human prompt. These shapes MUST stay in step
@@ -999,6 +1000,21 @@ function isCarryingOnLine(text: string): boolean {
 // changing too, an injected reason reads as a fresh human prompt and the
 // conversational carve-out silently mis-allows the stop.
 function isInjectedHookFeedback(text: string): boolean {
+  const wrapped = CODEX_HOOK_PROMPT.exec(text.trim());
+  return isHookNote(wrapped ? unescapeHookPrompt(wrapped[1] as string) : text);
+}
+
+// Codex 0.160 stores a Stop reason as a user message of its own,
+// <hook_prompt hook_run_id="stop:...">REASON</hook_prompt>, with < > and &
+// escaped. Only exactly that wrapper, around the whole message, is unwrapped,
+// and the text inside must still be one of the hook's own lines, so a
+// person's message with the tag and words of their own stays theirs.
+const CODEX_HOOK_PROMPT = /^<hook_prompt hook_run_id="stop:[^"\n]*">((?:(?!<\/?hook_prompt\b)[\s\S])*)<\/hook_prompt>$/;
+function unescapeHookPrompt(text: string): string {
+  return text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+}
+
+function isHookNote(text: string): boolean {
   const t = text.trimStart();
   return (
     t.startsWith("Stop hook feedback:") ||
