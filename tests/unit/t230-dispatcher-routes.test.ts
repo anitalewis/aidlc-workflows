@@ -2139,7 +2139,10 @@ describe("t230 native review-brief dispatch", () => {
             `| R-01 | Minor | ${artifact} > FR-1 | Deadline is missing | Add a delivery date |  |`,
           );
         } else {
-          expect(output).toContain(finding);
+          // The person's brief: a narrow row, and the full text on its own line.
+          expect(output).toContain(`| R-01 | Minor | ${artifact.split("/").at(-1)} > FR-1 | New |`);
+          expect(output).toContain("> R-01 Finding: Deadline is missing");
+          expect(output).toContain("> R-01 Required action: Add a delivery date");
         }
         if (command === "review") {
           expect(output).toContain("**Stage:** Requirements Analysis");

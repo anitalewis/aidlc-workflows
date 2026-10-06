@@ -2733,7 +2733,8 @@ describe("t304 engine-owned report replay and compatibility", () => {
       fallback,
     );
     expect(brief).toContain("Rejected: Known gap");
-    expect(brief).toContain(`| R-02 | Major | ${project.relativeArtifact} > review completion | ${fallback} |`);
+    expect(brief).toContain(`| R-02 | Major | ${project.relativeArtifact.split("/").at(-1)} > review completion | Unresolved |`);
+    expect(brief).toContain(`> R-02 Finding: ${fallback}`);
     expect(brief).toContain("**Review outcome:** Concerns remain for your decision.");
   });
 
@@ -3588,7 +3589,7 @@ describe("t304 protocol and harness projections use the deterministic renderer",
     expect(context.stdout).toContain("No open findings require re-checking");
     // The gate still shows people the explicit "no findings" row.
     const brief = run(REVIEW_BRIEF, ["review", "--stage", "requirements-analysis", "--why", "first"], proj);
-    expect(brief.stdout).toContain("| - | - | - | No findings | No action required | Resolved |");
+    expect(brief.stdout).toContain("| - | - | - | No findings |");
   });
 
   test("a review recorded as a record renders at the gate and in redispatch context, and its findings take dispositions", () => {
@@ -3732,9 +3733,7 @@ describe("t304 protocol and harness projections use the deterministic renderer",
     );
     expect(brief.status, brief.out).toBe(0);
     expect(brief.stdout).toContain(fallbackFinding);
-    expect(brief.stdout).not.toContain(
-      "| - | - | - | No findings | No action required | Resolved |",
-    );
+    expect(brief.stdout).not.toContain("| - | - | - | No findings |");
   });
 
   test("a record replaces a legacy embedded review for the same scope at the gate", () => {
