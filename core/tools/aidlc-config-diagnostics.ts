@@ -1497,13 +1497,26 @@ export function preserveKiroMcpRegion(
 }
 
 
+// A staged opencode.json as plain JSON, or null when it is the team's own file
+// with comments (a copy's own tree), which holds no provider block AI-DLC
+// writes or clears here.
+function openCodeJsonOrNull(path: string): Record<string, unknown> | null {
+  try {
+    const value = readJsonFile(path);
+    return isRecord(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 function writeOpenCodeProvider(
   projectionRoot: string,
   record: ProvidersRecord,
 ): void {
   if (!record.opencodeDefault) return;
   const path = join(projectionRoot, "opencode.json");
-  const value = readJsonFile(path) as Record<string, unknown>;
+  const value = openCodeJsonOrNull(path);
+  if (value === null) return;
   const providers = isRecord(value.provider) ? { ...value.provider } : {};
   const existing = isRecord(providers["amazon-bedrock"])
     ? providers["amazon-bedrock"]
@@ -1548,8 +1561,8 @@ function clearOpenCodeProvider(
 ): void {
   const path = join(projectionRoot, "opencode.json");
   if (!existsSync(path)) return;
-  const value = readJsonFile(path) as Record<string, unknown>;
-  if (!isRecord(value.provider)) return;
+  const value = openCodeJsonOrNull(path);
+  if (value === null || !isRecord(value.provider)) return;
   const providers = { ...value.provider };
   if (!openCodeProviderMatchesRecord(
     providers["amazon-bedrock"],

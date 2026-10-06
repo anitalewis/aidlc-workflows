@@ -7966,6 +7966,9 @@ function planRootIntegrations(
   // MCP is on because the project already has the shipped servers: keep and
   // update those, and add none it does not have.
   keepPresent = false,
+  // The source is the project's own copied tree, whose json-entries file is
+  // the team's own with AI-DLC's part merged in.
+  ownJsonEntries = ownBytes,
 ): void {
   let siblings: ProjectHarness[] | undefined;
   let siblingProjections: Array<{
@@ -8347,7 +8350,12 @@ function planRootIntegrations(
           ? { kind: "whole" }
           : { kind: "matching" };
       } else {
-        ownership = legacyMatch || sameJsonText(current, shippedText) ? { kind: "whole" } : { kind: "none" };
+        // From the project's own files the "shipped" file is the team's file
+        // itself, so matching it proves nothing: only entries naming AI-DLC's
+        // own folders are read as AI-DLC's, as at the first session.
+        ownership = legacyMatch || (!ownJsonEntries && sameJsonText(current, shippedText))
+          ? { kind: "whole" }
+          : { kind: "none" };
       }
       const merged = mergeJsonEntries(current, shippedText, ownership, force);
       if ("conflict" in merged) {
@@ -10876,6 +10884,7 @@ export async function main(
           rootContributions,
           ownFilesProject,
           keepPresentServers,
+          true,
         );
       }
     }
