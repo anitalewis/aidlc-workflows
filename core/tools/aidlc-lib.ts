@@ -36781,8 +36781,9 @@ function changeControlSourceFromLabel(label: string): string {
 
 /**
  * The label rendered after the value: `from scope classic`, `from project.md`,
- * `set by you` (the person's typed switch), `set by a command` (an explicit
- * setter with no typed turn behind it), `not set`.
+ * `set by you` (the person's typed switch, or a check they asked to turn off),
+ * `set by a command` (an explicit setter with no word of theirs behind it),
+ * `not set`.
  */
 export function changeControlSourceLabel(source: string): string {
   if (source === "not set") return source;

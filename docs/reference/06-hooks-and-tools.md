@@ -1962,7 +1962,8 @@ A memory layer's `Mode: strict` refuses an explicit `--guard-policy relaxed` or
 scope change, and names the memory file. Explicit strict and unrelated settings
 remain allowed. `review adversarial` stores an empty `Review Override`; explicit
 Guard Policy choices store `<value> (set by you)`; a ceremony choice stores
-`<value> (set by you)` when the hook applies the person's typed switch and
+`<value> (set by you)` when the hook applies the person's typed switch or the
+setter turns off a check the person asked in the chat to turn off, and
 `<value> (set by a command)` otherwise, never relabeling an identical
 `set by you` line; and a fence switch stores the `Guards Off` or `Guards On` line. An `on` override can raise a
 policy-lowered fence and records `GUARD_RESTORED`. Scope defaults retain their

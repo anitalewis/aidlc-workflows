@@ -1469,7 +1469,8 @@ and do not enforce this scope comparison.
 
 An explicit ceremony setting writes `<value> (set by a command)` to the
 corresponding state line, or `<value> (set by you)` when the human-turn hook
-applies the person's typed switch, and adds a `CEREMONY_SET` row to the shared
+applies the person's typed switch or the setter turns off a check the person
+asked in the chat to turn off, and adds a `CEREMONY_SET` row to the shared
 audit batch with `Key`, `Old`, `New`, and `Source`.
 `Old` is the previously saved value (raw text if invalid; the scope default
 when no line existed), not a value forced off by an environment kill switch.
@@ -1566,8 +1567,8 @@ that turns it back on, for example:
 
 > The review freeze check is off for this project since 10:42, because you said: "turn the review freeze check off for this project". Say "turn it back on" to restore it (aidlc config flags --clear-bypass AIDLC_DISABLE_REVIEW_FREEZE_HOOK --yes).
 
-When no message of yours in the chat stood behind it, the line says `set from a
-terminal or a file, not from your chat` instead. Every new chat opens with the
+When the engine cannot tie it to a message of yours in the chat, the line says
+only that the check is off and since when. Every new chat opens with the
 same line while the check stays off (except on opencode, which shows no
 session-start context), and `config flags --show` and the doctor Flags row (a
 warning, which does not change doctor's exit code) list it. Say "turn it back
