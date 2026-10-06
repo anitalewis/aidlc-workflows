@@ -133,6 +133,23 @@ describe("t-stop-carries-on-line: the agent's steps for the one-line Stop note",
     expect(hook).toContain("is not finished yet\\. Next: (?:finish its steps, then )?`[^`\\n]+`\\.$/");
   });
 
+  // Kiro CLI showed the person nothing of a Stop block, and its agent, started
+  // with a plain prompt and no aidlc skill in context, never said the line.
+  // So the engine carries the step: one list of the tools that hide the note,
+  // read by the Stop hook (the reason) and the session-start hook (the context
+  // sent again after a compaction), through the installed tool name.
+  test("(e) the tools that hide the note get the agent's step from the engine, not only from the skill", () => {
+    const paths = readFileSync(join(REPO_ROOT, "core/tools/aidlc-runtime-paths.ts"), "utf-8");
+    const list = /export function hidesStopNote\(harnessName: string\): boolean \{\n {2}return ([^\n]+);\n\}/.exec(paths);
+    if (list === null) throw new Error("aidlc-runtime-paths.ts has no hidesStopNote");
+    expect([...list[1].matchAll(/"([a-z-]+)"/g)].map((m) => m[1]).sort()).toEqual(["kiro", "kiro-ide", "opencode"]);
+    const stop = readFileSync(join(REPO_ROOT, "core/hooks/aidlc-continue-workflow.ts"), "utf-8");
+    expect(stop).toContain("hidesStopNote(runtimeHarnessName(projectDir))");
+    expect(stop).toContain("on its own line; ");
+    const start = readFileSync(join(REPO_ROOT, "core/hooks/aidlc-session-start.ts"), "utf-8");
+    expect(start).toContain("hidesStopNote(runtimeHarnessName(projectDir))");
+  });
+
   // The line names the stage the way status does ("Code Generation for
   // alpha"), never its slug, and Claude Code shows it to the person, so it
   // cannot carry the command. The skill gives the agent the exact command and

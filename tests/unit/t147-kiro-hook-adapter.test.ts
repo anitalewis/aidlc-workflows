@@ -385,6 +385,26 @@ describe("t147 Kiro hook adapter (live-captured payload fixtures)", () => {
     }
   });
 
+  // Kiro CLI shows the person nothing of a Stop block (live, 2.23.1), so the
+  // reason carries the agent's step after the line: the agent says the line
+  // itself, on its own line, even when the aidlc skill is not in its context.
+  const KIRO_LINE = "AI-DLC is carrying on with Requirements Analysis.";
+  const KIRO_AGENT_STEP =
+    "If you carry on with the work, first say that line to the person once, on its own line; " +
+    "if you had just asked them a question, record it with `log decision` and end your turn saying nothing. " +
+    "Say nothing else about this note.";
+  test("1b: on Kiro CLI the reason is the line, then the agent's step to say it", () => {
+    const dir = scratchProject(true);
+    try {
+      const r = runAdapter(dir, "continue-workflow", FIXTURES.stop, [], { AIDLC_HARNESS_NAME: undefined });
+      const out = JSON.parse(r.stdout) as { decision?: string; reason?: string };
+      expect(out.decision).toBe("block");
+      expect(out.reason).toBe(`${KIRO_LINE}\n${KIRO_AGENT_STEP}`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("1a: stop forwards session identity and allows an exact switch handoff", () => {
     const dir = scratchProject(true);
     try {

@@ -1210,6 +1210,31 @@ describe("t121 aidlc-continue-workflow hook — forwarding-loop enforcement (mig
     expect(reason).not.toMatch(/`|requirements-analysis|hook|forwarding|directive|receipt|run-stage|loop|the person/i);
   }, NATIVE_FIXTURE_SETUP_TIMEOUT_MS);
 
+  // The person on every tool gets the line once. Claude Code, Codex, Copilot
+  // and Cursor show the reason, so it is the plain line alone. Kiro CLI,
+  // opencode and Kiro IDE hide it, so after the line (still first) comes one
+  // sentence for the agent: say the line itself, on its own line, only when
+  // it carries on with the work. It reaches the agent even when the aidlc
+  // skill is not loaded.
+  test("(a) the reason is the plain line where the tool shows it, and the line plus the agent's step where it hides it", () => {
+    const line = "AI-DLC is carrying on with Requirements Analysis.";
+    const agentStep =
+      "If you carry on with the work, first say that line to the person once, on its own line; " +
+      "if you had just asked them a question, record it with `log decision` and end your turn saying nothing. " +
+      "Say nothing else about this note.";
+    for (const tool of ["claude", "codex", "copilot", "cursor", "kiro", "kiro-ide", "opencode"]) {
+      const proj = makeProject();
+      seedActive(proj, "requirements-analysis");
+      const r = runHook(proj, '{"stop_hook_active":false}', "run-stage", "", "", "requirements-analysis", "", false, {
+        AIDLC_HARNESS_NAME: tool,
+      });
+      const reason = (JSON.parse(r.out) as { reason: string }).reason;
+      const hides = tool === "kiro" || tool === "kiro-ide" || tool === "opencode";
+      expect(reason, tool).toBe(hides ? `${line}\n${agentStep}` : line);
+      expect(reason.split("\n")[0], tool).toBe(line);
+    }
+  }, NATIVE_FIXTURE_SETUP_TIMEOUT_MS);
+
   test("(a) reason is a sanctioned continuation (names AI-DLC carrying on, no override verbs)", () => {
     const proj = makeProject();
     seedActive(proj, "requirements-analysis");

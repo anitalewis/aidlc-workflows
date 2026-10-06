@@ -838,6 +838,13 @@ describe("t149 Codex hook adapter (live-captured payload fixtures)", () => {
     }
   });
 
+  // The step a tool that hides the note gets after the line (Kiro CLI,
+  // opencode, Kiro IDE); the matcher knows that form too.
+  const AGENT_STEP =
+    "If you carry on with the work, first say that line to the person once, on its own line; " +
+    "if you had just asked them a question, record it with `log decision` and end your turn saying nothing. " +
+    "Say nothing else about this note.";
+
   // A turn whose person engaged the work, then a user-role message, then an
   // answer with no engine call: blocks when that message is the hook's own
   // note, and ends the turn when it is the person's.
@@ -862,6 +869,7 @@ describe("t149 Codex hook adapter (live-captured payload fixtures)", () => {
       "AI-DLC is carrying on with Requirements Analysis.",
       "AI-DLC is carrying on with Code Generation for alpha.",
       "AI-DLC is carrying on.",
+      `AI-DLC is carrying on with Code Generation for alpha.\n${AGENT_STEP}`,
       "Requirements Analysis is not finished yet. Next: `bun .codex/tools/aidlc-orchestrate.ts next`.",
       "Code Generation for alpha is not finished yet. Next: finish its steps, then `aidlc engine orchestrate report --stage code-generation --result <outcome>`.",
     ]) {
@@ -883,6 +891,9 @@ describe("t149 Codex hook adapter (live-captured payload fixtures)", () => {
       "Requirements Analysis is not finished yet. Next: explain what is missing.",
       "AI-DLC is carrying on with the old plan.",
       "AI-DLC is carrying on with Requirements Analysis for the whole team.",
+      `AI-DLC is carrying on with Requirements Analysis.\n${AGENT_STEP} Why does it keep saying that?`,
+      `Why? AI-DLC is carrying on with Requirements Analysis.\n${AGENT_STEP}`,
+      `AI-DLC is carrying on with the old plan.\n${AGENT_STEP}`,
     ]) {
       const dir = scratchProject(true);
       try {
@@ -922,6 +933,7 @@ describe("t149 Codex hook adapter (live-captured payload fixtures)", () => {
       "AI-DLC is carrying on with Requirements Analysis.",
       "AI-DLC is carrying on with Feedback &amp; Optimization.",
       "AI-DLC is carrying on.",
+      `AI-DLC is carrying on with Requirements Analysis.\n${AGENT_STEP}`,
       "Requirements Analysis is not finished yet. Next: `bun .codex/tools/aidlc-orchestrate.ts next`.",
     ]) {
       const dir = scratchProject(true);
