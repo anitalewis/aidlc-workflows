@@ -302,7 +302,9 @@ When you switch spaces, two things follow the cursor automatically:
 2. **The rules your harness loads into context** — switching re-points your
    harness's native rule include (Claude's `@`-import, Kiro CLI resources or IDE steering,
    Codex's rules dir) at the new space's `memory/`, so the next turn works under
-   that team's method.
+   that team's method. Kiro IDE's steering only names the files (Kiro does not
+   expand its file references), so there the new method arrives with each
+   stage's instructions.
 
 At `default` this re-pointing is a no-op, which is why a single-team workspace
 never churns its committed files. The include is checkout-global rather than

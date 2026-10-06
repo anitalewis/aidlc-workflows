@@ -150,7 +150,7 @@ describe("t245 Kiro IDE hook registrations (v2 schema contract)", () => {
         expect(existsSync(join(tree.dir, "aidlc-session-end.json"))).toBe(false);
       });
 
-      test("dispatch-rules has NO IDE registration (always-included steering is the delivery channel)", () => {
+      test("dispatch-rules has NO IDE registration (the brief paste is the delivery channel)", () => {
         expect(existsSync(join(tree.dir, "aidlc-deliver-stage-rules.json"))).toBe(
           false,
         );

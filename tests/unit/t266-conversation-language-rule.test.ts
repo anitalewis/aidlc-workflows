@@ -441,7 +441,8 @@ describe("t266 conversation-language rule layer", () => {
           break;
         case "kiro-steering":
           // The IDE's real surface: an always-included steering file whose
-          // #[[file:...]] references pull the live memory tree in verbatim.
+          // #[[file:...]] references name the live memory tree. Kiro does not
+          // expand them, so this pins the re-pointed names, not delivery.
           surface = join(harness.engineRoot, "steering", "aidlc-active-memory.md");
           required = `#[[file:${MEMORY_DIR}/org.md]]`;
           break;

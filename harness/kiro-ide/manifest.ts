@@ -8,7 +8,9 @@
 //     The default v2 engine runs no .kiro/hooks at all, and a hook cannot
 //     detect that from inside, so the pin is the only guard. Kiro IDE does not
 //     read this file.
-//   - Always-included steering preloads the active-space memory tree.
+//   - Always-included steering names the active-space memory files by
+//     #[[file:]] reference. Kiro does not expand those references, so it is
+//     not a rule preload: workers get the stage's rules from the brief.
 //   - Hooks ship as v1 .kiro/hooks/*.json only; both surfaces register them at
 //     session start. IDE 0.x .kiro.hook files are not shipped: IDE 1.x never
 //     executes them.

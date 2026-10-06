@@ -878,7 +878,8 @@ final fallback. Helpers that receive a resolved `intent:null` retain its
 selected space when choosing the bare space root. Switching spaces with
 `/aidlc space <name>` also
 re-points each harness-native rule include (the Claude `@`-import stub described
-above, Kiro CLI resources or IDE steering, Codex's rules dir, opencode's
+above, Kiro CLI resources or IDE steering (whose file references Kiro does
+not expand), Codex's rules dir, opencode's
 `instructions` glob, and Copilot's `AGENTS.md` `@`-imports) at the switched space's
 `memory/`. At `default` the re-point is a byte-identical no-op, so a single-team
 committed tree never churns. SessionStart uses the resolved session space for

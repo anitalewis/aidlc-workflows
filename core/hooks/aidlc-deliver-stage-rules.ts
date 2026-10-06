@@ -6,9 +6,11 @@
 // OpenCode's adapter consumes the same output and mutates output.args. Kiro CLI
 // has no input-rewrite channel, so its adapter observes the proposed rewrite
 // and relies on native agent resource preload. Kiro IDE does not register this
-// hook because tool-argument delivery is not uniform across supported
-// generations; it instead preloads active memory through always-included
-// workspace steering with live file references.
+// hook (it has the same missing rewrite channel), and its agents declare no
+// native preload. Its always-included workspace steering names the memory
+// files by #[[file:]] reference, which Kiro does not expand, so the stage's
+// rule bundle reaches a worker only through the conductor's verbatim brief paste
+// (stage-protocol.md "For subagent stages" step 2), and nothing checks it.
 //
 // On Claude it also runs at PostToolUse, only to confirm a background launch
 // the PreToolUse input did not announce (see isBackgroundDispatch).

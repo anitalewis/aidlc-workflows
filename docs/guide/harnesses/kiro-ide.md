@@ -198,8 +198,10 @@ The install ships:
   `initialize` request, or the session runs no hooks (see
   [Kiro CLI hooks not running](../15-troubleshooting.md#kiro-cli-hooks-not-running)).
 - `.kiro/steering/aidlc-active-memory.md` — always-included IDE steering whose
-  live file references preload the active-space memory files for both the
-  conductor and delegated agents.
+  file references name the active-space memory files. Kiro does not expand
+  those references, so they load none of the files' text: the conductor
+  receives each stage's rules from the engine, and a delegated agent receives
+  that bundle only when the conductor pastes it into its brief.
 - `.kiro/steering/aidlc-onboarding.md` — always-included harness setup and commands.
 - `.kiro/hooks/aidlc-*.json` — the framework hooks in Kiro's v2 hook format.
   Both surfaces register them when a session starts; in Kiro IDE they appear
@@ -502,8 +504,9 @@ and onboarding fills — edit those
 This harness differs from the `kiro` CLI harness (`harness/kiro/`) in four ways:
 the `/aidlc` skill and the Markdown `agents/aidlc.md` are its conductor surfaces
 (`settings/cli.json` also makes that agent Kiro CLI's default); it ships v2 hook
-JSON files (the `kiro` harness relies on the agent-JSON `hooks` block); it preloads standing rules through
-always-included steering rather than CLI agent resources; the shared Kiro
+JSON files (the `kiro` harness relies on the agent-JSON `hooks` block); it ships always-included steering that names the standing rules
+rather than CLI agent resources that preload them (its workers get the rules
+from the brief); the shared Kiro
 projection removes the core persona's Claude-only `disallowedTools` key; and
 its manifest adds `tools:` and `permissions.rules` frontmatter to every persona.
 It does not ship the `kiro` harness's agent-v1 JSON.

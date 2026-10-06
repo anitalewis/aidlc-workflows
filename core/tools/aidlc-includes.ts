@@ -2,11 +2,13 @@
 //
 // The AIDLC method (the layered practice files org/team/project + phase rules)
 // lives ONCE at the workspace root under aidlc/spaces/<space>/memory/. Each
-// harness reads it via its OWN native include, evaluated by the CLI *before*
-// AIDLC's engine runs:
+// harness points at it from its OWN native include, evaluated by the CLI
+// *before* AIDLC's engine runs:
 //   • Claude — an @-import stub at <harness>/rules/aidlc.md naming each method file.
 //   • Kiro CLI — a `resources` glob in each agents/*.json.
-//   • Kiro IDE — an always-included steering file with live file references.
+//   • Kiro IDE — an always-included steering file with live file references
+//     (Kiro does not expand them, so this re-points the names only; stage
+//     rules reach Kiro IDE through rules_content).
 //   • Codex — the AIDLC_RULES_DIR env var in config.toml.
 //   • opencode — the `instructions` glob in the project-root opencode.json.
 //   • Cursor — standing + phase read pointers in <harness>/rules/*.mdc.
@@ -256,7 +258,8 @@ export function repointHarnessIncludes(projectDir: string, space?: string): stri
       }
     }
     // Kiro IDE binding surface: workspace steering is inherited by delegated
-    // agents; live file references carry the exact active memory files.
+    // agents; its live file references name the exact active memory files
+    // (Kiro does not expand them into context).
     const steeringPath = join(
       harnessRoot,
       "steering",

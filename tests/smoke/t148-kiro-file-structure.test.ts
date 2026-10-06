@@ -162,7 +162,7 @@ describe("t148 dist/kiro file structure", () => {
     expect(existsSync(join(KIRO, "AGENTS.md"))).toBe(true);
   });
 
-  test("Kiro IDE ships always-included active-memory steering for delegates", () => {
+  test("Kiro IDE ships always-included steering naming the active-memory files", () => {
     const path = join(
       REPO_ROOT,
       "dist",
