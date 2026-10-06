@@ -237,6 +237,27 @@ describe("a fence switch typed before any work exists", () => {
     expect(guardsOff(activeState(proj))).toContain("review-freeze");
   });
 
+  test.each([
+    "/aidlc --guard.review-freeze on",
+    "/aidlc --guard.review-freeze on fix the parser",
+    "/aidlc --guard.review-freeze off --guard.review-freeze on",
+    "/aidlc --guard.review-freeze off --guard.review-freeze on fix the parser",
+  ])("typed on (%s), the new work starts with it on", (typed) => {
+    const proj = emptyProject();
+    reply(proj, typed);
+    const asked = requestOf(proj, "fix the parser");
+    expect(utility(proj, ["intent-create", "--request", asked.id]).status).toBe(0);
+    expect(guardsOff(activeState(proj))).not.toContain("review-freeze");
+  });
+
+  test("plan approval typed on before the work stays on", () => {
+    const proj = emptyProject();
+    reply(proj, "/aidlc --guard.plan-approval on");
+    const asked = requestOf(proj, "build the export");
+    expect(utility(proj, ["intent-create", "--request", asked.id]).status).toBe(0);
+    expect(getField(activeState(proj), "Plan Approval") ?? "").toStartWith("on");
+  });
+
   test("turned back on before the work, the new work starts with it on", () => {
     const proj = emptyProject();
     reply(proj, "/aidlc --guard.review-freeze off");
