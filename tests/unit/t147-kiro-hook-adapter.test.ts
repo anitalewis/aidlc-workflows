@@ -2603,8 +2603,12 @@ describe("t147 Kiro CLI reads what the person typed from the expanded skill body
       const quoted = `fix it, "it's" broken and "don't" touch the "users'" files`;
       expect(r.stdout).toContain(`engine orchestrate next ${quoted}\n`);
       // A shell reads that call as the same words, so running it as told works.
-      const shell = spawnSync("sh", ["-c", `printf '%s\\n' ${quoted}`], { encoding: "utf-8" });
-      expect(shell.stdout.trimEnd().split("\n")).toEqual(words);
+      // Windows runs the call in PowerShell (the case below); its hook job also
+      // has no sh on PATH on purpose.
+      if (process.platform !== "win32") {
+        const shell = spawnSync("sh", ["-c", `printf '%s\\n' ${quoted}`], { encoding: "utf-8" });
+        expect(shell.stdout.trimEnd().split("\n")).toEqual(words);
+      }
       const guard = (command: string) => runAdapter(dir, "guard-tool-call", {
         cwd: dir, tool_name: "execute_bash", tool_input: { command },
       });
