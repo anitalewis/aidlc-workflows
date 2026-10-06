@@ -53,6 +53,7 @@ interface Expected {
   execute: number;
   skip: number;
   gates: number;
+  shown: number;
   perUnitStages: number;
 }
 
@@ -74,7 +75,8 @@ function derive(stages: Record<string, "EXECUTE" | "SKIP">): Expected {
       perUnitStages++;
     }
   }
-  return { total, execute, skip: total - execute, gates, perUnitStages };
+  // The stages a run shows the person: every EXECUTE stage after Initialization.
+  return { total, execute, skip: total - execute, gates, shown: gates, perUnitStages };
 }
 
 describe("t213 scopeCostSummary matches an independent grid+graph derivation", () => {
@@ -154,6 +156,7 @@ describe("t213 edge cases", () => {
       execute: 0,
       skip: 0,
       gates: 0,
+      shown: 0,
       perUnitStages: 0,
       off: [],
     });

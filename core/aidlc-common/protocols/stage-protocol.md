@@ -407,13 +407,9 @@ Then present the structured approval question as defined above.
 ### Part 4: Progress update (mandatory — after user approves)
 After the user selects "Approve", say the progress line the approval's reply carries as its `narration`, word for word; never count stages yourself. When the reply carries none, say no progress line.
 
-The engine counts the stages the plan runs after Initialization, the ones the person was shown, and puts the overall count of every compiled stage finished so far in parentheses:
+The engine counts the stages the plan runs after Initialization, the same count the person was shown when the work started, and puts the overall count of every compiled stage finished so far in parentheses:
 ```
 Progress: [X]/[S] in-scope stages complete ([N]/33 overall) | [phase-N]/[phase-total] [Phase]. Next: [Next Stage Name]
-```
-When every compiled stage is in the plan, the line is:
-```
-Progress: [N]/33 overall | [phase-N]/[phase-total] [Phase] stages complete. Next: [Next Stage Name]
 ```
 The phase part counts the approved stage's phase within the plan.
 

@@ -64,7 +64,7 @@ const PER_UNIT = new Set(
 function counts(
   stages: Record<string, "EXECUTE" | "SKIP">,
   greenfieldAdjust = false,
-): { execute: number; total: number; gates: number; perUnitStages: number } {
+): { execute: number; total: number; gates: number; shown: number; perUnitStages: number } {
   const st = { ...stages };
   if (greenfieldAdjust && st["reverse-engineering"] === "EXECUTE") {
     st["reverse-engineering"] = "SKIP";
@@ -73,21 +73,26 @@ function counts(
   const hasUnitDag = st["units-generation"] === "EXECUTE";
   let execute = 0;
   let gates = 0;
+  let shown = 0;
   let perUnitStages = 0;
   for (const [slug, action] of Object.entries(st)) {
     if (action !== "EXECUTE") continue;
     execute++;
-    if (PHASE.get(slug) !== "initialization") gates++;
+    if (PHASE.get(slug) !== "initialization") {
+      gates++;
+      shown++;
+    }
     if (hasUnitDag && PER_UNIT.has(slug)) perUnitStages++;
   }
-  return { execute, total, gates, perUnitStages };
+  return { execute, total, gates, shown, perUnitStages };
 }
 
 function costClause(cost: ReturnType<typeof counts>): string {
   const perUnit = cost.perUnitStages > 0
     ? `, ${cost.perUnitStages} ${cost.perUnitStages === 1 ? "stage repeats" : "stages repeat"} per unit of work in Construction`
     : "";
-  return `${cost.execute} of ${cost.total} stages, ${cost.gates} approval gates${perUnit}`;
+  // The stages after Initialization: the count the progress line uses too.
+  return `${cost.shown} stages, ${cost.gates} approval gates${perUnit}`;
 }
 
 interface RunResult {
@@ -175,10 +180,11 @@ describe("t214 compose offer carries the example counts (no feature-workflow tra
     const feature = counts(GRID.feature.stages, true);
     // bugfix leads, so a bug the description gave no word for is still offered.
     expect(q).toContain(
-      `e.g. bugfix = ${bugfix.execute} of ${bugfix.total} stages, express = ${express.execute}`,
+      `e.g. bugfix = ${bugfix.shown} stages, express = ${express.shown}`,
     );
-    expect(q).toContain(`classic = ${classic.execute}`);
-    expect(q).toContain(`feature = all ${feature.execute}`);
+    expect(q).toContain(`classic = ${classic.shown}`);
+    expect(q).toContain(`feature = ${feature.shown}`);
+    expect(q).not.toContain("of 33");
     // t198:200 pins this substring's absence on the compose-offer arm.
     expect(q).not.toContain('"feature" workflow');
   });
@@ -293,7 +299,7 @@ describe("t214 scope-change stdout carries the stage and gate counts", () => {
     expect(r.rc).toBe(0);
     // The fixture is Greenfield, so reverse-engineering EXECUTE -> SKIP.
     const mvp = counts(GRID.mvp.stages, true);
-    expect(r.out).toContain(`Switched to mvp: ${mvp.execute} stages (`);
+    expect(r.out).toContain(`Switched to mvp: ${mvp.shown} stages (`);
     expect(r.out).toContain(`, ${mvp.gates} approval gates`);
   });
 });

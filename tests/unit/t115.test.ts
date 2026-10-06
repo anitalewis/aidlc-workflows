@@ -96,6 +96,7 @@ import {
   reviewArtifactFingerprint,
   renderReviewVerdictCommand,
   resolveStage,
+  scopeCostSummary,
 } from "../../dist/claude/.claude/tools/aidlc-lib.ts";
 import { appendAuditEntry } from "../../dist/claude/.claude/tools/aidlc-audit.ts";
 import {
@@ -1512,6 +1513,8 @@ describe("t115 reviewer precondition (report refuses approve without a recorded 
     expect(done.narration).toBe(
       "Progress: 2/6 in-scope stages complete (5/33 overall) | 2/2 INCEPTION. Next: Code Generation",
     );
+    // The same count the work started with: "6 stages, 6 approval gates".
+    expect(scopeCostSummary("bugfix")?.shown).toBe(6);
   }, NATIVE_MULTI_WORKTREE_CASE_TIMEOUT_MS);
 
   test("R2q: the stage protocol has the agent say the engine's progress line, never count it", () => {

@@ -10948,8 +10948,14 @@ function handleScopeChange(projectDir: string, flags: Record<string, string>): v
       );
       // What happened and how to go back, then each stage it skipped and each
       // setting whose value changed. Nothing runs until the person asks.
+      // The stages after Initialization, the count the person reads everywhere
+      // during a run (the creation line, the progress line).
+      const shownDone = updatedCheckboxes.filter(
+        (c) => c.state === "completed" && executeSlugs.has(c.slug) &&
+          graph.find((s) => s.slug === c.slug)?.phase !== "initialization",
+      ).length;
       outputLines = [
-        `Switched to ${newScope}: ${executeStages.length} stages (${completedCount} done), ` +
+        `Switched to ${newScope}: ${summary.shown} stages (${shownDone} done), ` +
           `${gates} approval gates${ceremonyOffClause(summary)}.` +
           (isScopeName(oldScope) ? ` To go back, type \`${entrySkillInvocation()} --scope ${scopeArg(oldScope)}\`.` : ""),
         ...skippedNow.map(({ slug, was }) =>

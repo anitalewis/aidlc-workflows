@@ -36066,6 +36066,8 @@ export interface ScopeCostSummary {
   skip: number;          // total - execute
   gates: number;         // EXECUTE stages outside initialization; mirrors
                          // computeGate() in aidlc-orchestrate.ts - change together
+  shown: number;         // EXECUTE stages outside initialization: the stages a
+                         // run shows the person, the count every line they read uses
   perUnitStages: number; // EXECUTE stages that repeat per Unit of Work when
                          // units-generation EXECUTEs; otherwise they run once
   off: string[];        // scope defaults omitted from the gated-flow ceremony
@@ -36087,18 +36089,22 @@ export function gridCostSummary(
   const hasUnitDag = stages["units-generation"] === "EXECUTE";
   let execute = 0;
   let gates = 0;
+  let shown = 0;
   let perUnitStages = 0;
   for (const [slug, action] of Object.entries(stages)) {
     if (action !== "EXECUTE") continue;
     execute++;
     const node = byslug.get(slug);
     if (!node) continue;
-    if (node.phase !== "initialization") gates++;
+    if (node.phase !== "initialization") {
+      gates++;
+      shown++;
+    }
     // Without units-generation there is no Unit DAG, so per-unit stages
     // degrade to one stage-level pass (aidlc-orchestrate.ts).
     if (hasUnitDag && isPerUnitStage(node)) perUnitStages++;
   }
-  return { total, execute, skip: total - execute, gates, perUnitStages, off: [] };
+  return { total, execute, skip: total - execute, gates, shown, perUnitStages, off: [] };
 }
 
 /** Labels of ceremonies the effective policy turns off, plus reviewers when
