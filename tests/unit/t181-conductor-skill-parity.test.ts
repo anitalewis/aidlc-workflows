@@ -1250,6 +1250,20 @@ describe("t181 per-harness conductor-SKILL freshness gate (P11 RESOLVE-2)", () =
     }
   });
 
+  // A live run heard the engine's change line once, then the agent's own build
+  // summary told it again ("the note-store piece you already approved now has
+  // changed files. Your approval of it still stands."): the engine's sentence
+  // is the whole account, then and later.
+  test("every conductor says a change line once and never retells it later", () => {
+    for (const rel of skills) {
+      const body = readFileSync(join(REPO_ROOT, rel), "utf-8");
+      expect(body, rel).toContain(
+        "Never add a second account of the change, then or later: no summary, recap, gate message or closing line of yours tells it again in other words or adds that an approval still stands.",
+      );
+      expect(body, rel).not.toContain("Never add a second account of the change, never turn");
+    }
+  });
+
   test("every conductor quotes AI-DLC's instructions only when asked and still names the work's own files", () => {
     for (const rel of skills) {
       const body = readFileSync(join(REPO_ROOT, rel), "utf-8");
