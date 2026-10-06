@@ -7,8 +7,8 @@
 // so the assertions track the grid.
 //
 // Surfaces:
-//   - the keyword-hit confirm (Branch 8) carries "N of T stages, G approval
-//     gates" for the MATCHED scope,
+//   - the keyword-hit confirm (Branch 8) carries "N stages, G approval gates"
+//     for the MATCHED scope (N: the stages after Initialization),
 //   - the compose offer carries the express/classic/feature example trio,
 //     computed from the grid, and still avoids the t198 `"feature" workflow` trap,
 //   - the explicit-scope creation print carries the cost parenthetical, and
