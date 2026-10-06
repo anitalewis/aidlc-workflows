@@ -277,7 +277,8 @@ describe("t352 next: the flag rides to creation and the preview is honest", () =
     const declared = next(proj, ["--project-type", "brownfield", "--scope", "classic", "add the tooltip"]);
     expect(declared.kind).toBe("print");
     expect(String(declared.message)).toContain("--project-type brownfield");
-    const stages = (d: Record<string, unknown>) => Number(/\((\d+) of \d+ stages/.exec(String(d.message))?.[1]);
+    const stages = (d: Record<string, unknown>) => Number(/\((\d+) stages?, /.exec(String(d.message))?.[1]);
+    expect(stages(plain)).toBeGreaterThan(0);
     expect(stages(declared)).toBe(stages(plain) + 1);
     // An empty folder starts as a new project, said while it can be corrected.
     expect(String(plain.narration)).toContain("starting this as a new project without Reverse Engineering");
