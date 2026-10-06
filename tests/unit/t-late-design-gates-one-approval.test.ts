@@ -20,7 +20,8 @@
 //   6. checkpoints on, stage-major, and a lone remaining stage keep today's flow;
 //   7. no shipped prose still describes the late per-stage cascade;
 //   8. a reply another question used, or a question put since, approves nothing;
-//   9. autonomous Construction and team-owned Units keep one turn, one gate.
+//   9. autonomous Construction and team-owned Units keep one turn, one gate;
+//  10. the learnings question surfaces each listed stage; any other stage is still refused.
 //
 // SOURCE UNDER TEST (dist/claude/.claude/tools/): aidlc-orchestrate.ts next and
 // report, aidlc-state.ts gate-start and approve, through the spawned engine.
@@ -65,6 +66,8 @@ resetAidlcEnv();
 const BUN = process.execPath;
 const ORCH = join(AIDLC_SRC, "tools", "aidlc-orchestrate.ts");
 const LOG = join(AIDLC_SRC, "tools", "aidlc-log.ts");
+const LEARNINGS = join(AIDLC_SRC, "tools", "aidlc-learnings.ts");
+const RUNTIME = join(AIDLC_SRC, "tools", "aidlc-runtime.ts");
 
 const UNITS = ["alpha", "beta"];
 const BLOCK = [
@@ -486,6 +489,36 @@ describe("t-late-design-gates-one-approval: one question for the late stage appr
     const gate = runNext(lone);
     expect(gate).toMatchObject({ kind: "run-stage", stage: "code-generation", gate: true });
     expect(gate.approve_together).toBeUndefined();
+  });
+
+  test("10: the learnings question surfaces every listed stage's notes; other stages are still refused", () => {
+    const opts = { timeout: remainingOperationTimeoutMs(NATIVE_STARTUP_TIMEOUT_MS), encoding: "utf-8" as const, env: engineEnv() };
+    const surface = (proj: string, slug: string) =>
+      spawnSync(BUN, [LEARNINGS, "surface", "--slug", slug, "--project-dir", proj], opts);
+    // The stage graph surface reads its diary paths from, as a real install compiles it.
+    const built = (state: Parameters<typeof constructionState>[0]) => {
+      const proj = seedBuiltProject(state);
+      const compiled = spawnSync(BUN, [RUNTIME, "--project-dir", proj, "compile"], opts);
+      if ((compiled.status ?? -1) !== 0) throw new Error(`compile failed: ${compiled.stdout}${compiled.stderr}`);
+      return proj;
+    };
+    const together = built({ checkpoints: "disabled" });
+    for (const slug of BLOCK) {
+      const r = surface(together, slug);
+      expect(r.status, `${slug}: ${r.stdout}${r.stderr}`).toBe(0);
+    }
+    // A stage the one question does not name is refused, as before.
+    const later = surface(together, "build-and-test");
+    expect(later.status).not.toBe(0);
+    expect(later.stderr).toContain("slug mismatch");
+
+    // With checkpoints on, or stage-major, there is no combined question: a
+    // later stage is refused, as before.
+    for (const state of [{ checkpoints: "enabled" as const }, { stageMajor: true }]) {
+      const refused = surface(built(state), "nfr-requirements");
+      expect(refused.status).not.toBe(0);
+      expect(refused.stderr).toContain("slug mismatch");
+    }
   });
 
   test("7: no shipped prose still describes the late per-stage cascade", () => {
