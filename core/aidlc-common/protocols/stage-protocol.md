@@ -891,10 +891,10 @@ methodology (2 and 3): read it in the order listed.
 2. Paste the stage's rule bundle (`run-stage.rules_content`, or the
    accumulated `load-steering` parts when the bundle arrived in parts) into
    every agent brief verbatim. On harnesses whose agent definitions declare
-   native preload of the full active-space memory tree (the `kiro`
-   harness's agent `resources`), deliver the rule bundle through that
-   preload instead of pasting it; every other harness retains the
-   verbatim-paste contract. Every brief still carries
+   native preload of the full active-space memory tree (Kiro CLI `resources`
+   on the `kiro` harness), deliver the rule bundle
+   through that preload instead of pasting it; every other harness retains
+   the verbatim-paste contract. Every brief still carries
    `directive.ceremony`, `directive.protocol_modules`, and the diary discipline
    verbatim. An unloadable required rule blocks dispatch with repair guidance.
    Artifact references stay exact paths; never copy persona or knowledge prose

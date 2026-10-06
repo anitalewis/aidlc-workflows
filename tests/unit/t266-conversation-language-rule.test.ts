@@ -333,9 +333,9 @@ describe("t266 conversation-language rule layer", () => {
   // === (c2) HARNESS DELIVERY ===============================================
   // (c) proves the hook rewrite path, but only through the CLAUDE copy of the
   // hook. Claude, Codex, and opencode all use that path; Kiro CLI has no
-  // input-rewrite channel, and Kiro IDE does not register this hook because
-  // tool-argument delivery is not uniform across supported generations, so both
-  // rely on PRELOAD instead. Two ways this could silently regress while (c)
+  // input-rewrite channel and relies on PRELOAD instead; Kiro IDE does not
+  // register this hook and has no preload (its steering file references are not
+  // expanded), so its delegates get the rules only from the conductor's paste. Two ways this could silently regress while (c)
   // stays green: a harness ships a stale or diverged hook, or a Kiro manifest
   // stops projecting the memory glob. Check the delivered artifact itself in
   // both cases rather than its mere presence.
