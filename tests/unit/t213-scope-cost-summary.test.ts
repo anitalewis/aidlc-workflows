@@ -145,6 +145,20 @@ describe("t213 validateGrid threads the same summary the helper computes", () =>
   });
 });
 
+describe("t213 a greenfield plan counts what creation runs", () => {
+  // Creation skips Reverse Engineering on a new project, so the stage and
+  // question counts the plan offer relays are the ones creation then prints.
+  test("validateGrid(poc grid, greenfield).summary counts no Reverse Engineering", () => {
+    const grid = { ...GRID.poc.stages };
+    expect(grid["reverse-engineering"]).toBe("EXECUTE");
+    const created = gridCostSummary({ ...grid, "reverse-engineering": "SKIP" });
+    expect(validateGrid(grid, { projectType: "greenfield" }).summary).toEqual(created);
+    // Existing code, or no type named, still runs it.
+    expect(validateGrid(grid, { projectType: "brownfield" }).summary).toEqual(gridCostSummary(grid));
+    expect(validateGrid(grid).summary).toEqual(gridCostSummary(grid));
+  });
+});
+
 describe("t213 edge cases", () => {
   test("unknown scope returns null", () => {
     expect(scopeCostSummary("no-such-scope")).toBeNull();
