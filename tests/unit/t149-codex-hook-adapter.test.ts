@@ -814,47 +814,82 @@ describe("t149 Codex hook adapter (live-captured payload fixtures)", () => {
       const out = JSON.parse(r.stdout) as { decision?: string; reason?: string };
       expect(out.decision).toBe("block");
       expect(out.reason ?? "").not.toBe("");
-      // Copy-channel continuation guidance uses the harness-local Bun tool.
-      expect(out.reason).toContain("bun .codex/tools/aidlc-orchestrate.ts next");
+      // The reason passes through verbatim: one plain line the person can
+      // read, with no command (the Codex skill names the harness-local step).
+      expect(out.reason ?? "").toStartWith("AI-DLC is carrying on");
+      expect(out.reason).not.toContain("aidlc-orchestrate");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
   // Claude Code shows a Stop hook's whole note to the person ("Stop hook
-  // error: ..."), and Codex puts it in the chat: the note is one line they can
-  // read, naming the one step the agent takes next.
-  test("1b: the stop note is one line the person can read, naming the next step", () => {
+  // error: ..."): the note is one line they can read, naming where the work
+  // carries on, with no command (the agent's steps are in the Codex skill).
+  test("1b: the stop note is one line the person can read, naming where the work carries on", () => {
     const dir = scratchProject(true);
     try {
       const r = runAdapter(dir, "continue-workflow", withCwd(FIXTURES.stop, dir));
       const out = JSON.parse(r.stdout) as { decision?: string; reason?: string };
       expect(out.decision).toBe("block");
-      expect(out.reason).toBe("Requirements Analysis is not finished yet. Next: `bun .codex/tools/aidlc-orchestrate.ts next`.");
+      expect(out.reason).toBe("AI-DLC is carrying on with Requirements Analysis.");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
+  // A turn whose person engaged the work, then a user-role message, then an
+  // answer with no engine call: blocks when that message is the hook's own
+  // note, and ends the turn when it is the person's.
+  function stopAfterMessage(dir: string, message: string): string {
+    const entry = (payload: Record<string, unknown>) => JSON.stringify({ type: "response_item", payload });
+    const transcript = join(dir, "rollout-2026-06-26T00-00-00.jsonl");
+    writeFileSync(transcript, [
+      entry({ type: "message", role: "user", content: [{ type: "input_text", text: "ok, continue the workflow" }] }),
+      entry({ type: "function_call", name: "Bash", arguments: JSON.stringify({ command: "bun .codex/tools/aidlc-orchestrate.ts next" }) }),
+      entry({ type: "message", role: "user", content: [{ type: "input_text", text: message }] }),
+      entry({ type: "message", role: "assistant", content: [{ type: "output_text", text: "Two questions are still open." }] }),
+    ].join("\n") + "\n", "utf-8");
+    return runAdapter(dir, "continue-workflow", withCwd({ ...FIXTURES.stop, transcript_path: transcript }, dir)).stdout.trim();
+  }
+
   // Codex puts the note back into the chat as a message of the person's. The
   // hook still knows it as its own, so the agent that engaged the work and then
-  // only answered the note is still steered on.
+  // only answered the note is still steered on. Each line the hook writes, and
+  // the earlier one-line note still found in older transcripts, counts.
   test("1c: the stop note put back into the chat is not read as the person talking", () => {
-    const dir = scratchProject(true);
-    try {
-      const note = "Requirements Analysis is not finished yet. Next: `bun .codex/tools/aidlc-orchestrate.ts next`.";
-      const entry = (payload: Record<string, unknown>) => JSON.stringify({ type: "response_item", payload });
-      const transcript = join(dir, "rollout-2026-06-26T00-00-00.jsonl");
-      writeFileSync(transcript, [
-        entry({ type: "message", role: "user", content: [{ type: "input_text", text: "ok, continue the workflow" }] }),
-        entry({ type: "function_call", name: "Bash", arguments: JSON.stringify({ command: "bun .codex/tools/aidlc-orchestrate.ts next" }) }),
-        entry({ type: "message", role: "user", content: [{ type: "input_text", text: note }] }),
-        entry({ type: "message", role: "assistant", content: [{ type: "output_text", text: "Carrying on." }] }),
-      ].join("\n") + "\n", "utf-8");
-      const r = runAdapter(dir, "continue-workflow", withCwd({ ...FIXTURES.stop, transcript_path: transcript }, dir));
-      expect((JSON.parse(r.stdout || "{}") as { decision?: string }).decision).toBe("block");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
+    for (const note of [
+      "AI-DLC is carrying on with Requirements Analysis.",
+      "AI-DLC is carrying on with Code Generation for alpha.",
+      "AI-DLC is carrying on.",
+      "Requirements Analysis is not finished yet. Next: `bun .codex/tools/aidlc-orchestrate.ts next`.",
+      "Code Generation for alpha is not finished yet. Next: finish its steps, then `aidlc engine orchestrate report --stage code-generation --result <outcome>`.",
+    ]) {
+      const dir = scratchProject(true);
+      try {
+        expect((JSON.parse(stopAfterMessage(dir, note) || "{}") as { decision?: string }).decision, note).toBe("block");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  // A person's own message that starts like a note but is not one of the
+  // hook's own lines (no command in the older form, no stage the hook names
+  // in the new one) is the person talking: an answer to it with no engine call
+  // ends the turn.
+  test("1d: a person's message shaped like the note is still the person", () => {
+    for (const said of [
+      "Requirements Analysis is not finished yet. Next: explain what is missing.",
+      "AI-DLC is carrying on with the old plan.",
+      "AI-DLC is carrying on with Requirements Analysis for the whole team.",
+    ]) {
+      const dir = scratchProject(true);
+      try {
+        expect(stopAfterMessage(dir, said), said).toBe("");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     }
   });
 

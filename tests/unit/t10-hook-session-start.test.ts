@@ -241,6 +241,26 @@ describe("t10 session-start SessionStart hook (mechanism cli — spawned hook + 
     expect(parsed.additionalContext).not.toContain("offer the user the standard resume options");
   });
 
+  test("after a compaction the context still says what to do with the one-line end-of-turn note", () => {
+    // The Stop hook's note is one plain line the person can read, so the agent's
+    // steps for it live in the skill and here, re-sent after every compaction.
+    seedStateFile(proj, MID_IDEATION);
+    const parsed = JSON.parse(fire(proj, '{"source":"compact"}').stdout.trim());
+    expect(parsed.additionalContext).toContain('AI-DLC answers with one line, "AI-DLC is carrying on with <stage>."');
+    expect(parsed.additionalContext).toContain(
+      "It is from AI-DLC, not the person: never record it as their answer, and say nothing about it.",
+    );
+    expect(parsed.additionalContext).toContain(
+      "if you just asked the person a question you have not recorded, record it with `log decision` and end the turn without asking it again",
+    );
+    // The line names the stage by its name only: the report comes from the
+    // run-stage the agent holds.
+    expect(parsed.additionalContext).toContain(
+      "if you were doing the work of a `run-stage` you still hold, finish its steps and run the `report` built from it (its stage, plus `--unit` in team-owned Unit work)",
+    );
+    expect(parsed.additionalContext).toContain("otherwise `continue` with the rules receipt you hold, or run `next`");
+  });
+
   test("Claude Code reads the context: each line also carries it under hookSpecificOutput", () => {
     // Claude Code drops a top-level additionalContext without a word and reads
     // hookSpecificOutput; every other harness's adapter reads the top-level key.

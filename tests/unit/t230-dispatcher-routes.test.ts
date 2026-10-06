@@ -2086,11 +2086,16 @@ describe("t230 native review-brief dispatch", () => {
       expect(stopped.status, `${stopped.stdout}\n${stopped.stderr}`).toBe(0);
       const feedback = JSON.parse(stopped.stdout) as { decision: string; reason: string };
       expect(feedback.decision).toBe("block");
-      // A stage whose rules ride inside its run-stage names a fresh `next`; one
-      // whose rules arrive first (most stages on Copilot) names the receipt of
-      // the part in hand.
-      const recovery = /`(aidlc engine orchestrate (?:next|continue \S+))`/.exec(feedback.reason)?.[1];
-      expect(recovery, feedback.reason).toBeDefined();
+      // The Stop note is one plain line the person reads; the shipped skill
+      // names the agent's step for it, here one fresh `next`, and each rules
+      // part then names its own `continue`.
+      expect(feedback.reason).toStartWith("AI-DLC is carrying on");
+      const skillPath = [join(harnessDir, "skills", "aidlc", "SKILL.md"), join(".agents", "skills", "aidlc", "SKILL.md"), join(".github", "skills", "aidlc", "SKILL.md")]
+        .map((rel) => join(project, rel))
+        .find((path) => existsSync(path));
+      expect(skillPath, harness.name).toBeDefined();
+      const recovery = /run one fresh `(aidlc engine orchestrate next)`/.exec(readFileSync(skillPath!, "utf-8"))?.[1];
+      expect(recovery, harness.name).toBeDefined();
       let command = recovery!;
       let kind = "";
       for (let part = 0; part < 20; part++) {
