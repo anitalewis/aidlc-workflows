@@ -1095,7 +1095,7 @@ export const WORKSPACE_NOUNS = ["intent", "space"] as const;
 export type WorkspaceNoun = (typeof WORKSPACE_NOUNS)[number];
 
 // aidlc-testing-posture.ts runs the first of these it finds anywhere in argv.
-export const TESTING_POSTURE_SUBCOMMANDS = ["resolve", "render", "fingerprint", "verify", "begin", "brief", "reply"] as const;
+export const TESTING_POSTURE_SUBCOMMANDS = ["resolve", "render", "fingerprint", "verify", "begin", "brief", "reply", "restore"] as const;
 
 // The commands aidlc-utility.ts dispatches, as its unknown-command error lists them.
 export const UTILITY_COMMANDS = [
@@ -4782,6 +4782,44 @@ export function readPlanApprovalReceipt(
     "Plan Approval receipt",
   );
   return value?.version === 1 ? value : null;
+}
+
+/**
+ * The files a person approved for one Code Generation target and attempt: the
+ * plan, its test instructions, and the questions file that records the answer.
+ * Kept beside the receipt so a later change can be named in one line and undone
+ * by writing these bytes back. Each approval in the attempt replaces it.
+ */
+export interface ApprovedPlanCopy {
+  version: 1;
+  fingerprint: string;
+  plan: string;
+  instructions: string;
+  questions: string;
+}
+
+function approvedPlanCopyPath(projectDir: string, target: { targetId: string; runFloor: string }): string {
+  const key = createHash("sha256").update(`${target.targetId}\n${target.runFloor}`, "utf-8").digest("hex");
+  return join(planApprovalRuntimeDir(projectDir), `approved-${key}.json`);
+}
+
+export function writeApprovedPlanCopy(
+  projectDir: string,
+  target: { targetId: string; runFloor: string },
+  copy: ApprovedPlanCopy,
+): void {
+  ensurePlanApprovalRuntimeDir(projectDir);
+  writeFileAtomic(approvedPlanCopyPath(projectDir, target), `${JSON.stringify(copy)}\n`);
+}
+
+export function readApprovedPlanCopy(
+  projectDir: string,
+  target: { targetId: string; runFloor: string },
+): ApprovedPlanCopy | null {
+  const value = readPlanApprovalRuntimeJson<ApprovedPlanCopy>(approvedPlanCopyPath(projectDir, target), "approved plan copy");
+  return value?.version === 1 && typeof value.fingerprint === "string" && typeof value.plan === "string" &&
+      typeof value.instructions === "string" && typeof value.questions === "string"
+    ? value : null;
 }
 
 export function clearPlanApprovalReceipt(

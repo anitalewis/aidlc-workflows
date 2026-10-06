@@ -2074,6 +2074,15 @@ the structured contract plus methodology-specific plan profile.
 `reply [--session <id>]` prints, read-only, whether the person has replied to the
 pending Plan Approval question yet, so the conductor knows whether to read their
 reply and record their choice or to wait.
+`restore --unit <unit>` (or `--stage-level`) writes back the plan, test
+instructions and questions file the person approved in this stage attempt (the
+engine keeps a copy beside the approval receipt) and prints "Back to the plan you
+approved."; the conductor runs it when the person asks to go back to the approved
+plan, and the plan-approval guard lets it through before approval and while a
+plan waits, since it writes back only what the person approved. Until the build starts, an approved plan or test instructions that changed
+on disk are named in one line ("Your approved plan changed before the build: step
+4 now says ... instead of ..."): in `next`'s `change_notices` under a lowered Guard
+Policy, in the re-asked question's `plan_approval.note` under strict.
 `fingerprint --unit <unit>` and `verify --unit <unit>` bind and check per-unit
 evidence. The fingerprint covers a stable projection of the plan (a terminal
 `## Review` appendix erased, task markers reset, whitespace normalized), the
