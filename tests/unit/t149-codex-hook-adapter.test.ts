@@ -384,6 +384,23 @@ describe("t149 Codex structured request_user_input presence", () => {
     }
   });
 
+  test("what the person put in the box is on record word for word, question by question", () => {
+    const dir = scratchProject(true);
+    try {
+      const words = "Reject: keep the old login page until the new one is tested";
+      const payload = structuredSelectionPayload(dir, JSON.stringify({
+        answers: { decision: { answers: [words] } },
+      }));
+      expect(runAdapter(dir, "record-human-turn", payload).code).toBe(0);
+      const replied = readAudit(dir).split("\n## ").filter((block) => block.includes("**Event**: QUESTION_REPLIED"));
+      expect(replied).toHaveLength(1);
+      expect(replied[0]).toContain("**Question**: Approve?");
+      expect(replied[0]).toContain(`**Reply**: ${words}`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("substantive Codex answer arrays mint, including opaque question IDs and cancellation words in prose", () => {
     for (const [index, answer] of ["Approve", "cancel the standing order via cron"].entries()) {
       const dir = scratchProject(true);
