@@ -204,7 +204,7 @@ import {
   withAuditLock,
   writeFileAtomic,
 } from "../tools/aidlc-lib.ts";
-import { aidlcEngineCommand } from "../tools/aidlc-runtime-paths.ts";
+import { aidlcEngineCommand, hidesStopNote, runtimeHarnessName } from "../tools/aidlc-runtime-paths.ts";
 import {
   foldTranscriptIntoLedger,
   writeCurrentTranscriptPath,
@@ -959,6 +959,14 @@ const CARRYING_ON_LINE = /^AI-DLC is carrying on(?: with ([^\n]{1,200}))?\.$/;
 const STAGE_SLUG = /^[a-z0-9][a-z0-9-]*$/;
 const CONTINUATION_OPENING = "The AI-DLC workflow is not finished";
 const SAY_NOTHING = "tell the person nothing about this note";
+// What follows the line, on its own line, where the tool hides the note from
+// the person. It reaches the agent even when the aidlc skill is not in its
+// context (a plain prompt, no /aidlc), and the line stays first so logs and the
+// matcher read it the same way on every tool.
+const SAY_THE_LINE =
+  "If you carry on with the work, first say that line to the person once, on its own line; " +
+  "if you had just asked them a question, record it with `log decision` and end your turn saying nothing. " +
+  "Say nothing else about this note.";
 // The one-line note the hook wrote before: "<step> is not finished yet. Next:
 // `<command>`." (or "Next: finish its steps, then `<command>`."). The command
 // in backticks is part of the shape, so a person's own sentence that happens
@@ -985,6 +993,11 @@ function isCarryingOnLine(text: string): boolean {
     name.length > 0 && (named === name ||
       (named.startsWith(`${name} for `) && validateUnitName(named.slice(name.length + 5)) === null)),
   );
+}
+
+// The line alone, when the text is exactly the line and the agent's step after it.
+function withoutAgentStep(text: string): string {
+  return text.endsWith(`\n${SAY_THE_LINE}`) ? text.slice(0, -(SAY_THE_LINE.length + 1)) : text;
 }
 
 // True when a user-role transcript entry's text is actually the hook's OWN
@@ -1018,7 +1031,7 @@ function isHookNote(text: string): boolean {
   const t = text.trimStart();
   return (
     t.startsWith("Stop hook feedback:") ||
-    isCarryingOnLine(t.trimEnd()) ||
+    isCarryingOnLine(withoutAgentStep(t.trimEnd())) ||
     t.startsWith(STOPPED_ON_A_PROBLEM) ||
     // The earlier wordings, still found in older transcripts.
     STOP_NOTE.test(t.trimEnd()) ||
@@ -1572,6 +1585,19 @@ function stageName(slug: string): string | null {
   return slug;
 }
 
+// The reason for this tool: the plain line where the tool shows it to the
+// person (Claude Code, Codex, Copilot, Cursor); the line and then the agent's
+// step where the tool hides it, read from the installed tool name.
+function reasonForTheTool(line: string, projectDir: string): string {
+  let hides = false;
+  try {
+    hides = hidesStopNote(runtimeHarnessName(projectDir));
+  } catch {
+    // An unreadable install keeps the plain line.
+  }
+  return hides ? `${line}\n${SAY_THE_LINE}` : line;
+}
+
 // --- Main ---------------------------------------------------------------------
 
 export async function run(input: string): Promise<number> {
@@ -2122,7 +2148,7 @@ if (!shouldBlock) {
 }
 
 // Within budget — block the stop and re-feed the pending work.
-return blockStop(
+return blockStop(reasonForTheTool(
   continuationReason(
     kind,
     activeStage ?? currentStageSlug(stateContent),
@@ -2137,7 +2163,8 @@ return blockStop(
       : undefined,
     activeUnit,
   ),
-);
+  projectDir,
+));
 }
 
 if (import.meta.main) {
