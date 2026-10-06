@@ -73,6 +73,7 @@ describe("t-stop-carries-on-line: the agent's steps for the one-line Stop note",
 
   test("(b) the person on every tool gets the line once: shown by the tool, or said by the agent where the tool hides it", () => {
     const hides: Record<string, string> = {
+      "harness/kiro/skills/aidlc/SKILL.md": "Kiro CLI",
       "harness/kiro-ide/skills/aidlc/SKILL.md": "Kiro IDE",
       "harness/opencode/skills/aidlc/SKILL.md": "opencode",
     };
@@ -83,18 +84,24 @@ describe("t-stop-carries-on-line: the agent's steps for the one-line Stop note",
         expect(paragraph, rel).toContain(
           "it is for you, not for the person (some tools show it to them too), so say nothing about it.",
         );
-        expect(paragraph, rel).not.toContain("say that line to them once");
+        expect(paragraph, rel).not.toContain("first say the carrying-on line to them once");
       } else {
-        // One plain sentence in the agent's own reply: the line as the note
-        // names it, and nothing else about the note.
+        // One plain sentence in the agent's own reply, only when it carries on
+        // with the work: the line as the note names it, and nothing else.
         expect(paragraph, rel).toContain(
-          `${tool} does not show the note to the person, so when it is the carrying-on line, say that line to them once, ` +
-            "word for word and as a sentence of its own, before you carry on",
+          `${tool} does not show the note to the person, so if you carry on with the work (the rules parts, the stage, or a fresh \`next\`), ` +
+            "first say the carrying-on line to them once, word for word and as a sentence of its own",
         );
         expect(paragraph, rel).toContain('with " for <unit>" when it names a Unit, or just "AI-DLC is carrying on." when it names none');
-        expect(paragraph, rel).toContain("and say nothing else about the note.");
+        expect(paragraph, rel).toContain("and nothing else about the note.");
         expect(paragraph, rel).not.toContain("so say nothing about it.");
       }
+      // A question the agent just asked is recorded and the turn ends in
+      // silence on every tool: no line, no account of the recording.
+      const question = paragraph.slice(paragraph.indexOf("If you had just asked the person a question"));
+      expect(question.slice(0, question.indexOf(". ") + 1), rel).toEndWith(
+        "and end your turn without asking it again or saying anything else.",
+      );
     }
   });
 

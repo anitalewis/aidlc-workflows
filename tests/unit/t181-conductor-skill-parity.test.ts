@@ -39,6 +39,7 @@ import { HARNESS_MATRIX } from "../harness/harness-matrix.ts";
 // The tools that hide the Stop note from the person, by the name the skill
 // gives them; their agent says the carrying-on line itself.
 const SAYS_THE_LINE: Record<string, string> = {
+  "harness/kiro/skills/aidlc/SKILL.md": "Kiro CLI",
   "harness/kiro-ide/skills/aidlc/SKILL.md": "Kiro IDE",
   "harness/opencode/skills/aidlc/SKILL.md": "opencode",
 };
@@ -340,13 +341,12 @@ describe("t181 per-harness conductor-SKILL freshness gate (P11 RESOLVE-2)", () =
   });
 
   // The person on every tool gets the same one line. Claude Code, Codex and
-  // Copilot show the note itself (as do Cursor's follow-up message and, for
-  // now, Kiro CLI), so their agent says nothing about it; opencode and Kiro IDE
-  // hide it, so their agent says the line once, word for word.
+  // Copilot show the note itself (as does Cursor's follow-up message), so
+  // their agent says nothing about it; opencode, Kiro IDE and Kiro CLI hide it,
+  // so their agent says the line once, word for word, but only when it carries
+  // on with the work. Recording a question it just asked says nothing at all.
   test("only the skills of tools that hide the stop note have the agent say its line", () => {
-    const sayOnce = " does not show the note to the person, so when it is the carrying-on line, say that line to them once, " +
-      "word for word and as a sentence of its own, before you carry on (the stage it names, with \" for <unit>\" when it names a Unit, " +
-      "or just \"AI-DLC is carrying on.\" when it names none), and say nothing else about the note.";
+    const sayOnce = " does not show the note to the person, so if you carry on with the work (the rules parts, the stage, or a fresh `next`), first say the carrying-on line to them once, word for word and as a sentence of its own (the stage it names, with \" for <unit>\" when it names a Unit, or just \"AI-DLC is carrying on.\" when it names none), and nothing else about the note.";
     const forYou = "it is for you, not for the person (some tools show it to them too), so say nothing about it.";
     const problems = skills.flatMap((rel) => {
       const body = readFileSync(join(REPO_ROOT, rel), "utf-8");
@@ -354,7 +354,7 @@ describe("t181 per-harness conductor-SKILL freshness gate (P11 RESOLVE-2)", () =
       if (tool === undefined) {
         return [
           ...(body.includes(forYou) ? [] : [`${rel}: says nothing about the note`]),
-          ...(body.includes("say that line to them once") ? [`${rel}: must not say the line`] : []),
+          ...(body.includes("first say the carrying-on line to them once") ? [`${rel}: must not say the line`] : []),
         ];
       }
       return [
@@ -362,9 +362,15 @@ describe("t181 per-harness conductor-SKILL freshness gate (P11 RESOLVE-2)", () =
         ...(body.includes(forYou) ? [`${rel}: must not say nothing`] : []),
       ];
     });
+    // The question step ends the turn in silence on every tool.
+    const silent = "and end your turn without asking it again or saying anything else.";
+    for (const rel of skills) {
+      if (!readFileSync(join(REPO_ROOT, rel), "utf-8").includes(silent)) problems.push(`${rel}: question step says nothing`);
+    }
     expect(problems).toEqual([]);
     expect(Object.keys(SAYS_THE_LINE).sort()).toEqual([
       "harness/kiro-ide/skills/aidlc/SKILL.md",
+      "harness/kiro/skills/aidlc/SKILL.md",
       "harness/opencode/skills/aidlc/SKILL.md",
     ]);
   });
@@ -498,7 +504,7 @@ describe("t181 per-harness conductor-SKILL freshness gate (P11 RESOLVE-2)", () =
       // differs by tool on purpose (pinned by "only the skills of tools that
       // hide the stop note have the agent say its line"); the rest is shared.
       const block = body.slice(start, end).trim().replace(
-        /That note is from AI-DLC, not from the person, so never record it as their answer or reply to it as if they wrote it[^\n]*?(?:so say nothing about it\.|and say nothing else about the note\.)/,
+        /That note is from AI-DLC, not from the person, so never record it as their answer or reply to it as if they wrote it[^\n]*?(?:so say nothing about it\.|and nothing else about the note\.)/,
         "<the per-tool Stop-note sentence>",
       );
       const seen = blocks.get(block) ?? [];

@@ -251,7 +251,7 @@ describe("t10 session-start SessionStart hook (mechanism cli — spawned hook + 
       "It is from AI-DLC, not the person: never record it as their answer, and say it to them only where the aidlc skill says so.",
     );
     expect(parsed.additionalContext).toContain(
-      "if you just asked the person a question you have not recorded, record it with `log decision` and end the turn without asking it again",
+      "if you just asked the person a question you have not recorded, record it with `log decision` and end the turn without asking it again or saying anything else",
     );
     // The line names the stage by its name only: the report comes from the
     // run-stage the agent holds.
