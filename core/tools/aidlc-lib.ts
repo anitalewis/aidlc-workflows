@@ -16076,6 +16076,9 @@ export interface ReviewerNewFindingReport {
 export interface ReviewerFindingsReport {
   prior: ReviewerPriorFindingReport[];
   newFindings: ReviewerNewFindingReport[];
+  /** The report left out its Prior findings table. A first review has no
+   *  prior findings, so there it reads as empty; a later review is refused. */
+  priorMissing?: true;
 }
 
 export const REVIEW_FINDINGS_REPORT_RETRY_MESSAGE =
@@ -16152,14 +16155,16 @@ export function parseReviewerFindingsReport(
     line.trim().toLowerCase() === "**new findings**"
   );
   if (!hasPrior && !hasNew) return null;
-  if (!hasPrior || !hasNew) {
+  if (!hasNew) {
     throw new Error(REVIEW_FINDINGS_REPORT_RETRY_MESSAGE);
   }
-  const priorTable = reportTable(
-    visible,
-    "Prior findings",
-    ["ID", "Now", "Severity", "Note"],
-  );
+  const priorTable = hasPrior
+    ? reportTable(
+      visible,
+      "Prior findings",
+      ["ID", "Now", "Severity", "Note"],
+    )
+    : { headers: ["ID", "Now", "Severity", "Note"], rows: [] };
   const newTable = reportTable(
     visible,
     "New findings",
@@ -16223,7 +16228,7 @@ export function parseReviewerFindingsReport(
       };
     },
   );
-  return { prior, newFindings };
+  return { prior, newFindings, ...(hasPrior ? {} : { priorMissing: true as const }) };
 }
 
 /**
