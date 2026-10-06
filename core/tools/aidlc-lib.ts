@@ -4294,6 +4294,12 @@ export interface PlanApprovalRuntimeReceipt
   override?: PlanApprovalReceiptOverride;
   /** Plan approval was off, so the engine built this plan without asking; `source` says what turned it off. */
   skipped?: { source: string };
+  /**
+   * The fingerprint of the plan and instructions the build started on, kept
+   * only when that is not the approved content: a lowered fence built a plan
+   * edited after its approval. An interrupted build picks up only on it.
+   */
+  startedFingerprint?: string;
 }
 
 export interface PlanApprovalWorktreeDelegation {
