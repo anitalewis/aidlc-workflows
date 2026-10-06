@@ -85,6 +85,7 @@ import {
   existsSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -130,8 +131,11 @@ import {
   validateDirective,
 } from "./aidlc-directive.ts";
 import {
+  docsRoot,
   intentDisplayLabel,
   isBindableIntentRecordName,
+  keptRepliesSinceStageStart,
+  stageDir,
   isSafeIntentRecordName,
   SPACE_NAME_REGEX,
   workflowParticipation,
@@ -190,7 +194,9 @@ import {
   parseGuardPolicyStateLine,
   SKELETON_STANCES,
   guardRefusalStreakView,
+  pendingGuardRecoveryAsk,
   type GuardRemedy,
+  type GuardRecoveryAskData,
   humanAuthorityState,
   latestMainWorkflowStageRunFloorForProject,
   latestReviewRecordRefs,
@@ -911,6 +917,9 @@ function prepareEmission(directive: Directive): PreparedEmission {
       : activeKeptRequestLine;
     activeKeptRequestLine = null;
   }
+  // Before transport, so a run-stage delivered in parts (rebuilt by
+  // `continue`) carries the person's kept replies too.
+  directive = withKeptReplies(directive);
   // A route check asks one question: which Unit would the engine route now? It
   // never loads rules, so it skips transport entirely - which also keeps it from
   // minting the machine-local steering key on a checkout that has none.
@@ -1449,6 +1458,42 @@ function withBuiltPlanReviewRoute(directive: Directive): Directive {
   }
 }
 
+// A stage whose questions file still has a blank answer gets back what the
+// person already replied that no answer holds yet, so the agent records it
+// instead of asking them again (a chat can end between their reply and the
+// agent writing it down).
+const KEPT_REPLIES_NOTE =
+  "The person already replied to this stage's questions in an earlier chat, and no answer records these replies " +
+  "yet. `answered` lists what is already on record for this stage, in order (the way they chose to answer comes " +
+  "first), and `replies` came after it, in the order they typed them. Read them against the questions file: write " +
+  "each answer they gave on its [Answer]: line and record it with `log answer`, then ask only what is still open. " +
+  "Never ask them again what they already answered.";
+
+function withKeptReplies(directive: Directive): Directive {
+  if (isRouteCheckProbe() || directive.kind !== "run-stage" || directive.gate_only || directive.build_settled) {
+    return directive;
+  }
+  const projectDir = emissionProjectDir(directive);
+  if (!projectDir) return directive;
+  try {
+    const dir = directive.phase === "construction" && directive.unit
+      ? join(docsRoot(projectDir), "construction", directive.unit, directive.stage)
+      : stageDir(projectDir, directive.phase, directive.stage);
+    const blank = existsSync(dir) && readdirSync(dir).some((name) =>
+      name.endsWith("-questions.md") && /\[Answer\]:[ \t]*_*[ \t]*$/m.test(readFileSync(join(dir, name), "utf-8")));
+    if (!blank) return directive;
+    const kept = keptRepliesSinceStageStart(projectDir, {
+      stage: directive.stage,
+      ...(directive.phase === "construction" && directive.unit ? { unit: directive.unit } : {}),
+    });
+    if (kept === null) return directive;
+    directive.kept_replies = { answered: kept.answered, replies: kept.replies, note: KEPT_REPLIES_NOTE };
+  } catch (e) {
+    recordHookDrop(projectDir, "kept-replies", errorMessage(e));
+  }
+  return directive;
+}
+
 function emit(requested: Directive): void {
   const directive = withBuiltPlanReviewRoute(withPlanApprovalRoute(requested));
   const withLegacyOffer = attachLegacyKiroPlanApprovalChoices(
@@ -1472,12 +1517,17 @@ function emit(requested: Directive): void {
   // A plan change while the code plan's question is open leaves the question
   // as the published step.
   const planQuestionStays = planWaitPrints.has(requested);
+  // A hook refusal's question is asked as the hook used to print it, not
+  // published, so the person's own words from the request that led to it still
+  // carry their Request Changes.
+  const hookRefusalAsk = hookRefusalAsks.has(requested);
   if (
     prepared.marker &&
     !isReadOnlyEngineProbe() &&
     !retainedIssuedDirective &&
     !sameGuardRecoveryAsk &&
-    !planQuestionStays
+    !planQuestionStays &&
+    !hookRefusalAsk
   ) {
     const projectDir = prepared.projectDir;
     try {
@@ -4514,6 +4564,7 @@ const turnEndingPrints = new WeakSet<Directive>();
 // A plan change the person asked for while the code plan's question is open:
 // the question stays the published step (emit does not replace it).
 const planWaitPrints = new WeakSet<Directive>();
+const hookRefusalAsks = new WeakSet<Directive>();
 const publicationContexts = new WeakMap<
   Directive,
   { projectDir: string; stateHash: string }
@@ -7843,6 +7894,17 @@ function routeNext(args: string[], projectDir: string | undefined): void {
 
   const checkboxes = parseCheckboxes(stateContent);
   const currentState = checkboxStateOf(checkboxes, currentSlug);
+
+  // A guard hook refused a step and left its recovery question here.
+  const pendingRecovery = pendingGuardRecoveryDirective(
+    pd,
+    stateContent,
+    currentState === "awaiting-approval",
+  );
+  if (pendingRecovery) {
+    emit(pendingRecovery);
+    return;
+  }
 
   // A folder set up as a new project gained code before Construction: ask the
   // person which it is, at a stage boundary rather than over an open gate.
@@ -11900,7 +11962,33 @@ function retiredGuardPolicyNotice(projectDir: string, stateContent: string): str
 function guardRecoveryAskFromToolOutput(
   output: string,
 ): GuardRecoveryAskDirective | null {
-  const ask = guardRecoveryAskFromRefusalText(output);
+  return validGuardRecoveryAsk(guardRecoveryAskFromRefusalText(output));
+}
+
+// The recovery question a hook refusal left for this `next` (the hook's own
+// message names only `next`). It waits behind a question already put to the
+// person: the open gate, or an engine question still being answered. A
+// read-only probe reads it and writes nothing. It is asked once and not
+// published as the active question, the same as when the hook printed it.
+function pendingGuardRecoveryDirective(
+  projectDir: string,
+  stateContent: string,
+  gateOpen: boolean,
+): GuardRecoveryAskDirective | null {
+  const held = gateOpen || readActiveDirectiveMarker(projectDir, stateContent)?.kind === "ask";
+  const probe = isReadOnlyEngineProbe();
+  const ask = pendingGuardRecoveryAsk(projectDir, stateContent, {
+    take: !probe && !held,
+    prune: !probe,
+  });
+  const directive = held ? null : validGuardRecoveryAsk(ask);
+  if (directive) hookRefusalAsks.add(directive);
+  return directive;
+}
+
+function validGuardRecoveryAsk(
+  ask: GuardRecoveryAskData | null,
+): GuardRecoveryAskDirective | null {
   if (ask === null) return null;
   const result = validateDirective(ask);
   if (

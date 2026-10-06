@@ -1560,10 +1560,19 @@ valid re-confirmation can finish an unchanged pending review without another
 rejection or a new stage attempt.
 
 **One rule for first occurrence, at both sites.** A refusal renders as a
-guard-recovery `ask` the first time it happens. The router emits it as the
+guard-recovery `ask` the first time it happens. Its question is one line in the
+person's words, naming the stage (and the Unit) as they know it: "Functional
+Design for alpha can't go ahead as things stand: which way would you like to go
+on?", with "still" when the same state repeats; the options carry the detail
+and the reason codes stay in the ask's fields. The router emits it as the
 directive; an enforcing tool prints the human sentence and then the same ask as
 the last line of its refusal, which the router parses back into the directive it
-would have emitted itself. The `.aidlc-engine/guard-refusals/` record beside the other
+would have emitted itself. The review-freeze hook, whose output the tool shows
+the person, prints the human sentence and `Next:` with the `next` command
+instead, and leaves the ask in its refusal record: the next `next` asks it once,
+after any open gate or engine question, while the step is still open and
+unapproved, the same reset boundary holds, and the check would still refuse; a
+read-only probe reads it without taking it. The `.aidlc-engine/guard-refusals/` record beside the other
 gitignored runtime files counts repetitions of one guard state (stage, Unit,
 lifecycle state, attempt fields, the latest session/workflow/jump/rejection
 boundary, and the resource fingerprints); it carries no authority, and an
@@ -1577,7 +1586,7 @@ tool failure.
 
 **The human's selection survives the re-ask.** An engine-published guard-recovery
 ask is stored as an active-directive marker (`kind: "ask"`,
-`ask_type: "guard-recovery"`); a hook/tool-printed ask alone does not publish one.
+`ask_type: "guard-recovery"`); a tool-printed ask alone does not publish one, and neither does the review-freeze hook's ask when `next` asks it, so the person's own words from the request that led to the refusal still carry their Request Changes.
 The marker carries `remedies`, the offered `op`, `action`, `operation` (when present),
 and `interaction` entries in display order. The human-turn hook records that the
 person replied (`delivery: consumed`, `selection_sha256` over their words,

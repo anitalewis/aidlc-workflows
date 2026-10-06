@@ -6310,15 +6310,29 @@ export interface WorkflowSelectionOptions {
 // Throws SessionResolutionConflictError when the two disagree and the override
 // did not come from a validated hook payload.
 export function resolveInvokingSessionId(projectDir: string): string | null {
-  const envSession = validSessionId(process.env.AIDLC_SESSION_OVERRIDE);
+  const overrideSession = validSessionId(process.env.AIDLC_SESSION_OVERRIDE);
+  // Codex gives every command it runs CODEX_THREAD_ID, the session id its
+  // hooks carry, so a Codex tool needs no override written into the command.
+  const codexSession = overrideSession === null && runtimeHarnessDir(projectDir) === ".codex"
+    ? validSessionId(process.env.CODEX_THREAD_ID)
+    : null;
+  const envSession = overrideSession ?? codexSession;
   // This refusal is a footgun guard against stale exported overrides, not a
   // security boundary. The SOURCE marker is an internal hookChildEnv contract.
   // Deliberately setting both variables is an intentional same-user act
   // equivalent to a sanctioned session switch; no privilege boundary exists
   // between callers that could authenticate it.
   const payloadOverride =
-    envSession !== null &&
-    process.env.AIDLC_SESSION_OVERRIDE_SOURCE === "payload";
+    codexSession !== null ||
+    (overrideSession !== null && process.env.AIDLC_SESSION_OVERRIDE_SOURCE === "payload");
+  if (
+    overrideSession !== null &&
+    process.env.AIDLC_SESSION_OVERRIDE_SOURCE === "payload" &&
+    process.env.CODEX_THREAD_ID === overrideSession &&
+    runtimeHarnessDir(projectDir) === ".codex"
+  ) {
+    noteCodexThreadSession(projectDir, overrideSession);
+  }
   const ancestrySession = resolveSessionIdFromAncestry(projectDir);
   if (
     envSession &&
@@ -6329,6 +6343,28 @@ export function resolveInvokingSessionId(projectDir: string): string | null {
     throw new SessionResolutionConflictError(envSession, ancestrySession);
   }
   return envSession ?? ancestrySession;
+}
+
+// Codex hands its thread id to the commands it runs but not to its hooks, so
+// the Bash hook cannot see it. A tool that finds the id in its command matching
+// the session the hook wrote records that here, and the hook then leaves this
+// session's later commands as written.
+export function codexThreadSessionPath(projectDir: string, sessionId: string): string | null {
+  const safe = safeSessionId(sessionId);
+  return safe ? join(sessionsDir(projectDir), `${safe}.codex-thread`) : null;
+}
+
+function noteCodexThreadSession(projectDir: string, sessionId: string): void {
+  const path = codexThreadSessionPath(projectDir, sessionId);
+  if (path === null || existsSync(path)) return;
+  try {
+    const dir = dirname(path);
+    assertNoSymlinkInChainOrThrow(projectDir, relative(projectDir, dir));
+    mkdirSync(dir, { recursive: true });
+    writeFileAtomic(path, "");
+  } catch {
+    // Without the note the hook keeps writing the session into each command.
+  }
 }
 
 // Resolve one stable workflow target for an operation. Explicit selectors win,
@@ -9298,7 +9334,7 @@ export function recordGuardRecoveryChoice(
   projectDir: string,
   details: string,
   withWords: boolean,
-): { op: GuardRemedyOp; action: string; awaitingWords: boolean } {
+): { op: GuardRemedyOp; action: string; awaitingWords: boolean; stage: string; unit?: string } {
   return transactActiveDirective(projectDir, (marker, target) => {
     let stateContent: string;
     try {
@@ -9339,7 +9375,10 @@ export function recordGuardRecoveryChoice(
       return {
         marker,
         preserve: true,
-        result: { op: remedy.op, action: remedy.action, awaitingWords: response.status === "awaiting-feedback" },
+        result: {
+          op: remedy.op, action: remedy.action, awaitingWords: response.status === "awaiting-feedback",
+          stage: marker.stage, ...(marker.unit ? { unit: marker.unit } : {}),
+        },
       };
     }
     // The latest reply: a later one may already have been taken as feedback.
@@ -9359,7 +9398,10 @@ export function recordGuardRecoveryChoice(
           picked_by: "conductor",
         },
       },
-      result: { op: remedy.op, action: remedy.action, awaitingWords },
+      result: {
+        op: remedy.op, action: remedy.action, awaitingWords,
+        stage: marker.stage, ...(marker.unit ? { unit: marker.unit } : {}),
+      },
     };
   });
 }
@@ -11617,14 +11659,33 @@ function literalConstructionPolicySetter(command: string): { field: string; valu
   return field !== undefined && rest.length === 2 ? { field, value: rest[1] } : null;
 }
 
+// The Review brief the protocol prints at the gate, before its question:
+// `bun <harness>/tools/aidlc-review-brief.ts review|summary ...`, or the same
+// through `aidlc engine review-brief` or `bun <harness>/tools/aidlc.ts engine
+// review-brief`, named bare as one command. It only reads.
+function literalReviewBriefRead(command: string): boolean {
+  const literal = parseLiteralShellInvocation(command);
+  if (!literal || literal.directory !== null) return false;
+  const words = literal.argv;
+  const tools = `${harnessDir()}/tools`;
+  let rest: string[];
+  if (words[0] === "aidlc" && words[1] === "engine" && words[2] === "review-brief") rest = words.slice(3);
+  else if (words[0] === "bun" && words[1] === `${tools}/aidlc.ts` && words[2] === "engine" && words[3] === "review-brief") {
+    rest = words.slice(4);
+  } else if (words[0] === "bun" && words[1] === `${tools}/aidlc-review-brief.ts`) rest = words.slice(2);
+  else return false;
+  return rest[0] === "review" || rest[0] === "summary";
+}
+
 // The human-presence floors' one rule (Kiro CLI and Kiro IDE): whether a tool
 // call waits for the person's turn. It holds only while a stage gate the person
 // must answer is open and no turn of theirs is on record since it opened. A
 // gate the engine approves itself (isAutonomousConstructionGate, the rule its
 // approval uses) does not need them, and the one Construction policy setter
 // their recorded choice authorizes (the setter's own check) runs while a gate
-// stays open for its later approval. Neither lets through what the engine
-// would refuse, and either one that cannot be read leaves the floor holding.
+// stays open for its later approval, as does the Review brief, which only
+// reads. None lets through what the engine would refuse, and a setter whose
+// receipt cannot be read leaves the floor holding.
 export function presenceFloorHolds(
   projectDir: string,
   stateContent: string | null,
@@ -11632,6 +11693,7 @@ export function presenceFloorHolds(
 ): boolean {
   if (!stateContent || !hasOpenGate(stateContent)) return false;
   if (humanActedSinceGate(projectDir)) return false;
+  if (literalReviewBriefRead(command)) return false;
   const setter = literalConstructionPolicySetter(command);
   try {
     if (setter !== null && constructionPolicyChangeAllowed(projectDir, setter.field, setter.value)) {
@@ -25817,6 +25879,80 @@ export function personRepliedSincePresentation(
     .some((block) => isReplyTurn({ event: auditBlockField(block, "Event") ?? "", block }));
 }
 
+// What the person typed in any chat since the stage started, after the latest
+// answer the engine recorded, in the order they typed it, or null. These are
+// replies no answer holds yet: a chat that ended before the agent wrote or
+// logged them leaves them here for the stage's next run. `answered` is the
+// stage's questions and answers already on record, so a later chat knows what
+// the replies came after. Nothing here reads meaning into them. A stage
+// already at its gate, or a chat whose kept words miss one of these replies,
+// gives none.
+export function keptRepliesSinceStageStart(
+  projectDir: string,
+  stage: { stage: string; unit?: string },
+): { replies: string[]; answered: Array<{ question: string; answer: string }> } | null {
+  const shardPath = auditFilePath(projectDir);
+  const shard = projectRelativePath(projectDir, shardPath);
+  let records: GateWordsRecord[];
+  let content: string;
+  try {
+    const dir = gateWordsDir(projectDir);
+    if (!existsSync(dir)) return null;
+    // Every chat's file: the stage may have been asked in an earlier one.
+    records = readdirSync(dir).flatMap((name) => {
+      if (!name.endsWith(".json")) return [];
+      let session: unknown;
+      try {
+        session = (JSON.parse(readRegularFileNoFollowOrThrow(join(dir, name), "gate words", GATE_WORDS_MAX_FILE_BYTES)
+          .toString("utf-8")) as { session?: unknown } | null)?.session;
+      } catch {
+        return [];
+      }
+      const record = typeof session === "string" ? readGateWords(projectDir, session) : null;
+      return record !== null && record.shard === shard && record.messages.length > 0 ? [record] : [];
+    });
+    if (records.length === 0) return null;
+    content = readAppendOnlyFileNoFollowOrThrow(shardPath, "audit shard").toString("utf-8");
+  } catch {
+    return null;
+  }
+  const separator = /\r?\n---\r?\n/g;
+  let start = 0;
+  let from = 0;
+  let answered: Array<{ question: string; answer: string }> = [];
+  let asked: string | null = null;
+  for (;;) {
+    const match = separator.exec(content);
+    const block = content.slice(start, match ? match.index : content.length).replace(/\r\n/g, "\n");
+    const event = auditBlockField(block, "Event");
+    const ours = auditBlockField(block, "Stage") === stage.stage &&
+      (stage.unit === undefined || auditBlockField(block, "Unit") === stage.unit);
+    if (event !== null && GATE_WORDS_LIFECYCLE_EVENTS.has(event) && ours) {
+      if (event !== "STAGE_STARTED") return null;
+      from = start;
+      answered = [];
+      asked = null;
+    } else if (event !== null && GATE_WORDS_ANSWERED_BY.has(event)) {
+      from = start;
+      if (event === "QUESTION_ANSWERED" && ours) {
+        answered.push({ question: asked ?? "", answer: auditBlockField(block, "Details") ?? "" });
+        asked = null;
+      }
+    } else if (event === "DECISION_RECORDED" && ours) {
+      asked = auditBlockField(block, "Decision");
+    }
+    if (match === null) break;
+    start = match.index + match[0].length;
+  }
+  const floor = Buffer.byteLength(content.slice(0, from), "utf-8");
+  if (records.some((record) => record.dropped > floor)) return null;
+  const replies = records
+    .flatMap((record) => record.messages.filter((message) => message.offset > floor))
+    .sort((a, b) => a.offset - b.offset)
+    .map((message) => message.text);
+  return replies.length > 0 ? { replies, answered } : null;
+}
+
 // The person's latest chat turn in this clone's ledger for the selected work:
 // when it was, and the words its chat kept right after it (null when the hook
 // kept none: a slash command, a picked option, an over-long message). Null when
@@ -28650,6 +28786,36 @@ function unitMajorResetCost(reset: "jump" | "reject", stage: string): string {
         "review and checkpoint approval again.";
 }
 
+// The exact Request Changes report for a refused stage. A team-owned Unit gate
+// reports that Unit at its gate stage; anything else, a solo walk one Unit at a
+// time included, reports the stage, because the engine refuses --unit there.
+// The person's words go on as a single-quoted --reason.
+export function requestChangesReportArgs(
+  stage: string,
+  unit: string | undefined,
+  teamGate: GuardRefusalInput["teamGate"],
+): string[] {
+  const team = teamGate?.resolved === true && unit ? { stage: teamGate.gateStage, unit } : null;
+  return [
+    "report", "--stage", team?.stage ?? stage, ...(team ? ["--unit", team.unit] : []),
+    "--result", "rejected", "--user-input", "Request Changes",
+  ];
+}
+
+// The same report, rendered for this checkout, from the record's own state.
+export function requestChangesReportCommand(projectDir: string, stage: string, unit: string | undefined): string {
+  let teamGate: GuardRefusalInput["teamGate"];
+  try {
+    teamGate = unit ? teamUnitGateStatus(projectDir, readStateFile(projectDir), stage, unit) : undefined;
+  } catch {
+    teamGate = undefined;
+  }
+  return renderEngineInvocation(
+    { route: "orchestrate", args: requestChangesReportArgs(stage, unit, teamGate) },
+    { harnessDir: harnessDir() },
+  );
+}
+
 function unresolvedTeamGateRemedy(
   resolution: Extract<TeamUnitGateResolution, { resolved: false }>,
 ): GuardRemedy {
@@ -28755,7 +28921,8 @@ function lifecycleResetRemedies(
         "report",
         "--stage",
         reportStage,
-        ...(input.unit ? ["--unit", input.unit] : []),
+        // Only a team-owned Unit gate reports its Unit; a solo walk reports the stage.
+        ...(input.teamGate?.resolved === true && input.unit ? ["--unit", input.unit] : []),
         "--result",
         "revised",
         ...(input.projectDir ? ["--project-dir", input.projectDir] : []),
@@ -29299,6 +29466,11 @@ export interface GuardRefusalRecord {
   resetToken: string;
   refusal: GuardRefusal;
   updatedAt: string;
+  // A hook refusal's recovery question, left for the next `next` to ask (the
+  // hook's own message only names `next`), and the stage's latest approval when
+  // it was left: an approval since then retires the question.
+  pendingAsk?: GuardRecoveryAskData;
+  pendingApproval?: string;
 }
 
 export interface GuardRecoveryAskData {
@@ -29333,9 +29505,10 @@ function guardRefusalResetToken(
   projectDir: string,
   stage: string,
   unit?: string,
+  events: AuditShardEvent[] = readAuditShardEvents(projectDir),
 ): string {
   const resetEvents = sortAttemptEvents(
-    readAuditShardEvents(projectDir).filter((event) => {
+    events.filter((event) => {
       if (
         event.event === "SESSION_STARTED" ||
         event.event === "SESSION_RESUMED" ||
@@ -29344,18 +29517,7 @@ function guardRefusalResetToken(
       ) {
         return true;
       }
-      if (event.event === "GATE_REJECTED") {
-        const stages = (
-          auditBlockField(event.block, "Gate Stages") ??
-            auditBlockField(event.block, "Stage") ??
-            ""
-        )
-          .split(",")
-          .map((value) => value.trim());
-        if (!stages.includes(stage)) return false;
-        const eventUnit = auditBlockField(event.block, "Unit") ?? undefined;
-        return eventUnit === undefined || eventUnit === unit;
-      }
+      if (event.event === "GATE_REJECTED") return gateEventCovers(event, stage, unit);
       if (event.event === "BOLT_STARTED" && unit !== undefined) {
         return (auditBlockField(event.block, "Bolt names") ?? "")
           .split(",")
@@ -29369,6 +29531,33 @@ function guardRefusalResetToken(
   return latest === undefined
     ? ""
     : `${latest.event}\0${latest.timestamp}\0${latest.shard}\0${latest.pos}`;
+}
+
+// A gate decision for this stage, and for this Unit or every Unit.
+function gateEventCovers(event: AuditShardEvent, stage: string, unit?: string): boolean {
+  const stages = (
+    auditBlockField(event.block, "Gate Stages") ??
+      auditBlockField(event.block, "Stage") ??
+      ""
+  )
+    .split(",")
+    .map((value) => value.trim());
+  if (!stages.includes(stage)) return false;
+  const eventUnit = auditBlockField(event.block, "Unit") ?? undefined;
+  return eventUnit === undefined || eventUnit === unit;
+}
+
+// The latest approval of this stage (or this Unit's step), so a question left
+// before it can tell that the step it was about was approved since.
+function guardRefusalApprovalToken(
+  events: AuditShardEvent[],
+  stage: string,
+  unit?: string,
+): string {
+  const latest = sortAttemptEvents(
+    events.filter((event) => event.event === "GATE_APPROVED" && gateEventCovers(event, stage, unit)),
+  ).at(-1);
+  return latest === undefined ? "" : `${latest.timestamp}\0${latest.shard}\0${latest.pos}`;
 }
 
 function readGuardRefusalRecord(path: string): GuardRefusalRecord | null {
@@ -29385,7 +29574,9 @@ function readGuardRefusalRecord(path: string): GuardRefusalRecord | null {
       !value.codes.every((code) => typeof code === "string") ||
       typeof value.resetToken !== "string" ||
       typeof value.updatedAt !== "string" ||
-      !isPlainObject(value.refusal)
+      !isPlainObject(value.refusal) ||
+      (value.pendingAsk !== undefined && !isPlainObject(value.pendingAsk)) ||
+      (value.pendingApproval !== undefined && typeof value.pendingApproval !== "string")
     ) {
       return null;
     }
@@ -29470,10 +29661,7 @@ export function guardRefusalStreakView(
         ? {
             ...ask,
             reason_codes: codes,
-            question:
-              `The same guard state for "${refusal.stage}" has refused ` +
-              `${refusal.blockedAction} ${count} times. Choose one ` +
-              "authority-preserving recovery action.",
+            question: guardRecoveryQuestion(refusal, true),
           }
         : ask,
     };
@@ -29494,12 +29682,14 @@ export function guardRefusalStreakView(
 // Record one refusal against the streak for its stage and Unit, and return the
 // ask that renders it. The record is the only write; it lives beside the other
 // gitignored runtime files and carries no authority, so a persistence failure
-// can only under-count, never relax a guard.
+// can only under-count, never relax a guard. `leaveAsk` keeps the ask in the
+// record for the next `next` to put to the person (a hook refusal).
 export function recordGuardRefusal(
   projectDir: string,
   refusal: GuardRefusal,
   attempt: GuardAttemptState,
   resourceFingerprints: ReadonlyArray<string> = [],
+  leaveAsk = false,
 ): GuardRefusalStreak {
   const { record, ...streak } = guardRefusalStreakView(
     projectDir,
@@ -29509,21 +29699,50 @@ export function recordGuardRefusal(
   );
   const path = guardRefusalPath(projectDir, refusal.stage, refusal.unit);
   try {
+    const left: GuardRefusalRecord = leaveAsk
+      ? {
+          ...record,
+          pendingAsk: streak.ask,
+          pendingApproval: guardRefusalApprovalToken(
+            readAuditShardEvents(projectDir),
+            refusal.stage,
+            refusal.unit,
+          ),
+        }
+      : record;
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`, "utf-8");
+    writeFileSync(path, `${JSON.stringify(left, null, 2)}\n`, "utf-8");
   } catch {
     // Persistence failure under-counts repetitions; it never relaxes a guard.
   }
   return streak;
 }
 
+// The stage, and its Unit when there is one, as the person knows them. The
+// way-out question must never fail to build, so an unreadable stage graph
+// leaves the stage named as it is stored.
+function guardRefusalTarget(refusal: GuardRefusal): string {
+  let name = refusal.stage;
+  try {
+    name = findStageBySlug(refusal.stage)?.name ?? refusal.stage;
+  } catch {
+    // The stage graph is unreadable here: keep the stored name.
+  }
+  return refusal.unit ? `${name} for ${refusal.unit}` : name;
+}
+
+// The one line the person reads above the ways on; the options carry the
+// detail and the reason codes stay in the ask's fields. A repeat says so.
+function guardRecoveryQuestion(refusal: GuardRefusal, again = false): string {
+  return `${guardRefusalTarget(refusal)}${again ? " still" : ""} can't go ahead as things ` +
+    "stand: which way would you like to go on?";
+}
+
 // The ask for a refusal that has at least one executable remedy: the remedies
 // the conductor may offer now, and nothing else.
 export function guardRecoveryAskForRefusal(
   refusal: GuardRefusal,
-  question =
-    `The next action for "${refusal.stage}" would be refused. Choose one ` +
-    "authority-preserving recovery action.",
+  question = guardRecoveryQuestion(refusal),
 ): GuardRecoveryAskData | null {
   const remedies = refusal.remedies.filter((remedy) => remedy.executableNow);
   if (remedies.length === 0) return null;
@@ -29556,9 +29775,7 @@ export function guardTerminalAskForRefusal(
   // In the person's terms: where the work stopped and that it needs them. The
   // refusal code and the state signature stay in the ask's fields (and the
   // signature at the end of a repeated stop, for a report).
-  const target = refusal.unit
-    ? `unit ${refusal.unit}'s "${refusal.stage}"`
-    : `"${refusal.stage}"`;
+  const target = guardRefusalTarget(refusal);
   const why = refusal.userMessage.trim().length > 0 ? ` ${refusal.userMessage.trim()}` : "";
   const situation =
     `I stopped at ${target}: this step cannot go ahead, and there is ` +
@@ -29595,6 +29812,105 @@ export function guardRefusalOutput(
     resourceFingerprints,
   );
   return `${refusal.userMessage}\n${JSON.stringify(streak.ask)}`;
+}
+
+// The refusal as a PreToolUse hook prints it: what was refused, then the step
+// to take. The tool shows hook output to the person, so it carries no JSON; the
+// recovery question waits in the refusal record and the next `next` asks it.
+export function guardRefusalHookNote(
+  projectDir: string,
+  refusal: GuardRefusal,
+  attempt: GuardAttemptState,
+  resourceFingerprints: ReadonlyArray<string> = [],
+): string {
+  recordGuardRefusal(projectDir, refusal, attempt, resourceFingerprints, true);
+  return `${refusal.userMessage} Next: \`${aidlcToolInvocation("orchestrate")} next\`.`;
+}
+
+// Whether the review freeze would still refuse the write it refused: the
+// check is still up and a final review (or a pending recovery review) still
+// covers that stage or Unit. Unknown reads as no, so a question is never asked
+// about a refusal that may be gone.
+function reviewFreezeRefusalStands(
+  projectDir: string,
+  stateContent: string,
+  refusal: GuardRefusal,
+): boolean {
+  try {
+    if (resolveProjectFlag("AIDLC_DISABLE_REVIEW_FREEZE_HOOK") === "1") return false;
+    if (decideFence(projectDir, "review-freeze", { stateContent }).decision === "stand-aside") return false;
+    const stage = loadStageGraph().find((entry) => entry.slug === refusal.stage);
+    if (!stage?.reviewer) return false;
+    const receipts = freshReviewReceipts(projectDir, stateContent, stage, {
+      reviewClass: resolveReviewClass(
+        stage.review_class ?? "adversarial",
+        getField(stateContent, "Scope") ?? "",
+        stateContent,
+      ),
+    });
+    if (refusal.unit !== undefined) {
+      return receipts.unitVerdicts.has(refusal.unit) ||
+        receipts.unitPending.get(refusal.unit)?.recovery === true;
+    }
+    return receipts.stageVerdict !== null || receipts.stagePending?.recovery === true;
+  } catch {
+    return false;
+  }
+}
+
+// The newest recovery question a hook refusal left that still stands: the same
+// reset boundary, no approval of that step since, the stage still open, and the
+// refusing check still holding. With `take` that question is cleared, so it is
+// asked once; with `prune` every question that no longer stands is cleared.
+// Neither writes anything for a read-only probe.
+export function pendingGuardRecoveryAsk(
+  projectDir: string,
+  stateContent: string,
+  options: { take: boolean; prune: boolean },
+): GuardRecoveryAskData | null {
+  const dir = join(engineDir(projectDir), "guard-refusals");
+  let names: string[];
+  try {
+    names = readdirSync(dir).filter((name) => name.endsWith(".json"));
+  } catch {
+    return null;
+  }
+  const pending: { path: string; record: GuardRefusalRecord }[] = [];
+  for (const name of names) {
+    const path = join(dir, name);
+    const record = readGuardRefusalRecord(path);
+    if (record?.pendingAsk !== undefined) pending.push({ path, record });
+  }
+  if (pending.length === 0) return null;
+  const events = readAuditShardEvents(projectDir);
+  const closed = new Set(
+    parseCheckboxes(stateContent)
+      .filter((entry) => entry.state === "completed" || entry.state === "skipped")
+      .map((entry) => entry.slug),
+  );
+  const stands = ({ record }: { record: GuardRefusalRecord }): boolean => {
+    const { stage, unit } = record.refusal;
+    return !closed.has(stage) &&
+      record.resetToken === guardRefusalResetToken(projectDir, stage, unit, events) &&
+      (record.pendingApproval ?? "") === guardRefusalApprovalToken(events, stage, unit) &&
+      (record.refusal.code !== "REVIEW_FREEZE_ACTIVE" ||
+        reviewFreezeRefusalStands(projectDir, stateContent, record.refusal));
+  };
+  const standing = pending.filter(stands).sort((a, b) => a.record.updatedAt.localeCompare(b.record.updatedAt));
+  const asked = standing.at(-1) ?? null;
+  const cleared = [
+    ...(options.prune ? pending.filter((entry) => !standing.includes(entry)) : []),
+    ...(options.take && asked ? [asked] : []),
+  ];
+  for (const { path, record } of cleared) {
+    const { pendingAsk: _ask, pendingApproval: _approval, ...rest } = record;
+    try {
+      writeFileSync(path, `${JSON.stringify(rest, null, 2)}\n`, "utf-8");
+    } catch {
+      // A question that cannot be cleared may be asked again; it never relaxes a guard.
+    }
+  }
+  return asked?.record.pendingAsk ?? null;
 }
 
 // The guard-recovery ask carried on the last line of a tool refusal, if any.

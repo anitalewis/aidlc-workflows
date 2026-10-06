@@ -304,6 +304,8 @@ function runAdapter(
         ...process.env,
         AIDLC_UNATTENDED: undefined,
         CLAUDE_PROJECT_DIR: undefined,
+        CODEX_THREAD_ID: undefined,
+        CODEX_SESSION_ID: undefined,
         ...envOverrides,
       } as NodeJS.ProcessEnv,
       timeout: remainingOperationTimeoutMs(NATIVE_STARTUP_TIMEOUT_MS),
@@ -804,6 +806,101 @@ describe("t149 Codex hook adapter (live-captured payload fixtures)", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  // Codex 0.160 gives every command it runs CODEX_THREAD_ID, the same id its hooks
+  // carry, but not the hooks themselves. Once a tool has seen the id in its
+  // command, the command needs no `export AIDLC_SESSION_OVERRIDE=...` prefix,
+  // which Codex showed on every "Ran" line (a live run).
+  test("0b: once a tool saw Codex give the session, later commands keep their own words", () => {
+    const dir = scratchProject(true);
+    try {
+      const command = "bun .codex/tools/aidlc-orchestrate.ts next";
+      const payload = {
+        hook_event_name: "PreToolUse",
+        session_id: "codex-command-session",
+        cwd: dir,
+        tool_name: "Bash",
+        tool_input: { command },
+      };
+      const runTool = (thread: string) =>
+        spawnSync("bun", [join(dir, ".codex", "tools", "aidlc-orchestrate.ts"), "next"], {
+          cwd: dir,
+          encoding: "utf-8",
+          env: {
+            ...process.env,
+            AIDLC_SESSION_OVERRIDE: "codex-command-session",
+            AIDLC_SESSION_OVERRIDE_SOURCE: "payload",
+            CLAUDE_PROJECT_DIR: undefined,
+            CODEX_SESSION_ID: undefined,
+            CODEX_THREAD_ID: thread,
+          } as NodeJS.ProcessEnv,
+          timeout: remainingOperationTimeoutMs(NATIVE_STARTUP_TIMEOUT_MS),
+        });
+      // Each call is its own tool call: the adapter replays a repeated delivery.
+      const first = runAdapter(dir, "bind-bash-session", { ...payload, tool_use_id: "call-first" });
+      expect(first.code, first.stderr).toBe(0);
+      if (process.platform !== "win32") {
+        expect(first.stdout).toContain("export AIDLC_SESSION_OVERRIDE='codex-command-session'");
+        // A tool whose command carries another thread's id notes nothing.
+        runTool("codex-other-thread");
+        const still = runAdapter(dir, "bind-bash-session", { ...payload, tool_use_id: "call-other" });
+        expect(still.stdout).toContain("export AIDLC_SESSION_OVERRIDE='codex-command-session'");
+      }
+      // The tool sees Codex give its command this session.
+      runTool("codex-command-session");
+      const later = runAdapter(dir, "bind-bash-session", { ...payload, tool_use_id: "call-later" });
+      expect(later.code, later.stderr).toBe(0);
+      expect(later.stdout).toBe("");
+      // Another session in the same project still gets the prefix.
+      if (process.platform !== "win32") {
+        const other = runAdapter(dir, "bind-bash-session", {
+          ...payload, session_id: "codex-second-session", tool_use_id: "call-second",
+        });
+        expect(other.stdout).toContain("export AIDLC_SESSION_OVERRIDE='codex-second-session'");
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("0c: a Codex command's tool works on the record its thread is bound to", () => {
+    const dir = scratchProject(true);
+    try {
+      writeSessionBinding(dir, "codex-command-session", DEFAULT_SPACE, DEFAULT_RECORD_DIR, "switch");
+      const other = createIntent(dir, "codex-other", DEFAULT_SPACE, "feature");
+      writeFileSync(
+        join(intentsDirOf(dir, DEFAULT_SPACE), other.dirName, "aidlc-state.md"),
+        readFileSync(seededStateFile(dir), "utf-8"),
+      );
+      setActiveIntentCursor(dir, other.dirName, DEFAULT_SPACE);
+      const next = (thread: string | undefined) => {
+        const r = spawnSync("bun", [join(dir, ".codex", "tools", "aidlc-orchestrate.ts"), "next"], {
+          cwd: dir,
+          encoding: "utf-8",
+          env: {
+            ...process.env,
+            AIDLC_SESSION_OVERRIDE: undefined,
+            AIDLC_SESSION_OVERRIDE_SOURCE: undefined,
+            CLAUDE_PROJECT_DIR: undefined,
+            CODEX_SESSION_ID: undefined,
+            CODEX_THREAD_ID: thread,
+          } as NodeJS.ProcessEnv,
+          timeout: remainingOperationTimeoutMs(NATIVE_STARTUP_TIMEOUT_MS),
+        });
+        return `${r.stdout ?? ""}${r.stderr ?? ""}`;
+      };
+      expect(next("codex-command-session")).toContain(`intents/${DEFAULT_RECORD_DIR}/`);
+      expect(next(undefined)).toContain(`intents/${other.dirName}/`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("0d: Codex's own session names are protected like the session override", () => {
+    const guard = readFileSync(join(REPO_ROOT, "core", "hooks", "runtime-integrity.ts"), "utf-8");
+    expect(guard).toContain('"CODEX_THREAD_ID",');
+    expect(guard).toContain('"CODEX_SESSION_ID",');
   });
 
   test("1: stop blocks with a reason while the workflow has pending work (verbatim contract)", () => {

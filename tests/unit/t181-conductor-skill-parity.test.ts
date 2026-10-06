@@ -905,11 +905,12 @@ describe("t181 per-harness conductor-SKILL freshness gate (P11 RESOLVE-2)", () =
       }
 
       const ensemble = read(`${protocolRoot}/stage-protocol-ensemble.md`);
+      // The Kiro CLI subsection runs to the next heading; a shipped tree
+      // carries only its own tool's subsection, so that may be the end.
       const cliStart = ensemble.indexOf("### Kiro CLI\n");
-      const ideStart = ensemble.indexOf("### Kiro IDE\n", cliStart);
       expect(cliStart).toBeGreaterThan(-1);
-      expect(ideStart).toBeGreaterThan(cliStart);
-      const binding = ensemble.slice(cliStart, ideStart);
+      const next = ensemble.slice(cliStart + 1).search(/\n#{2,3} /);
+      const binding = ensemble.slice(cliStart, next === -1 ? undefined : cliStart + 1 + next);
       expect(binding, protocolRoot).toContain(citation);
       expect(binding, protocolRoot).toContain("native preload");
       expect(binding, protocolRoot).not.toMatch(residualPaste);
@@ -1200,6 +1201,16 @@ describe("t181 per-harness conductor-SKILL freshness gate (P11 RESOLVE-2)", () =
   // one, and the work's own files keep their paths.
   // The person's Plan Approval pick is matched on the choice labels, so they
   // stay exactly as given even when the rest of the question is translated.
+  // Kiro shows the presence floor's line to the person too, so it is one
+  // sentence for them, and every conductor keys its own step on it.
+  test("every conductor waits for the person on the approval floor's line", () => {
+    for (const rel of skills) {
+      expect(readFileSync(join(REPO_ROOT, rel), "utf-8"), rel).toContain(
+        'A refusal that reads "Nothing runs until you answer the approval question." means the person has not answered the approval question yet: show that question again if it is not on screen and end the turn; never run the call again before they reply.',
+      );
+    }
+  });
+
   test("every conductor keeps the Plan Approval choice labels exactly as given", () => {
     for (const rel of skills) {
       const body = readFileSync(join(REPO_ROOT, rel), "utf-8");
