@@ -441,22 +441,6 @@ describe("t181 per-harness conductor-SKILL freshness gate (P11 RESOLVE-2)", () =
     expect(missing).toEqual([]);
   });
 
-  // A live run asked "Does this all look correct" while the summary sat folded
-  // inside tool output: the person must read what they confirm.
-  test("the summary the person confirms is on screen with its question, on every harness", () => {
-    const protocol = readFileSync(join(REPO_ROOT, "core/aidlc-common/protocols/stage-protocol.md"), "utf-8");
-    expect(protocol).toContain(
-      "The person confirms what they can read: the bullets sit in the question itself, or right above it in the same " +
-        "message, as the question-rendering annex shows; never only in a tool's output or a file.",
-    );
-    const missing = harnessQuestionAnnexes().filter((rel) => {
-      const body = readFileSync(join(REPO_ROOT, rel), "utf-8");
-      const checkpoint = body.slice(body.indexOf("## Mandatory consolidated-summary checkpoint"));
-      return !checkpoint.includes("- <each answer, as a summary bullet>");
-    });
-    expect(missing).toEqual([]);
-  });
-
   test("the narration rule is worded identically across every harness", () => {
     // Byte-alignment, not just presence: the rule is authored once and ported,
     // so a per-harness reword is drift. Extracted by its own anchors rather than
@@ -1060,6 +1044,22 @@ describe("t181 per-harness conductor-SKILL freshness gate (P11 RESOLVE-2)", () =
       const body = readFileSync(join(REPO_ROOT, rel), "utf-8");
       if (!body.includes("show the question and wait for the person's answer, even when it lists one piece of work;")) missing.push(rel);
     }
+    expect(missing).toEqual([]);
+  });
+
+  // A live run asked "Does this all look correct" while the summary sat folded
+  // inside tool output: the person must read what they confirm.
+  test("the summary the person confirms is on screen with its question, on every harness", () => {
+    const protocol = readFileSync(join(REPO_ROOT, "core/aidlc-common/protocols/stage-protocol.md"), "utf-8");
+    expect(protocol).toContain(
+      "The person confirms what they can read: the bullets sit in the question itself, or right above it in the same " +
+        "message, as the question-rendering annex shows; never only in a tool's output or a file.",
+    );
+    const missing = harnessQuestionAnnexes().filter((rel) => {
+      const body = readFileSync(join(REPO_ROOT, rel), "utf-8");
+      const checkpoint = body.slice(body.indexOf("## Mandatory consolidated-summary checkpoint"));
+      return !checkpoint.includes("- <each answer, as a summary bullet>");
+    });
     expect(missing).toEqual([]);
   });
 
