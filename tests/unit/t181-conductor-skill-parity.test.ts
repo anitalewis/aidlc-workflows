@@ -249,9 +249,9 @@ describe("t181 per-harness conductor-SKILL freshness gate (P11 RESOLVE-2)", () =
     expect([...blocks.values()][0]).toEqual(skills);
   });
 
-  test("every shipped conductor SKILL separates in-flight deltas from stock routing", () => {
+  test("every shipped conductor composer.md separates in-flight deltas from stock routing", () => {
     const missing: string[] = [];
-    for (const rel of skills) {
+    for (const rel of skills.map((skill) => skill.replace(/SKILL\.md$/, "composer.md"))) {
       const body = readFileSync(join(REPO_ROOT, rel), "utf-8");
       for (const tok of COMPOSER_ROUTE_TOKENS) {
         if (!body.includes(tok)) missing.push(`${rel}  missing: ${tok}`);
@@ -506,10 +506,9 @@ describe("t181 per-harness conductor-SKILL freshness gate (P11 RESOLVE-2)", () =
   });
 
   test("Codex conductor guidance uses its native $aidlc invocation", () => {
-    const body = readFileSync(
-      join(REPO_ROOT, "harness/codex/skills/aidlc/SKILL.md"),
-      "utf-8",
-    );
+    const body = ["SKILL.md", "composer.md"]
+      .map((file) => readFileSync(join(REPO_ROOT, "harness/codex/skills/aidlc", file), "utf-8"))
+      .join("\n");
     for (const stale of [
       "`/aidlc --resume`",
       "fresh `/aidlc`",
@@ -708,7 +707,10 @@ describe("t181 per-harness conductor-SKILL freshness gate (P11 RESOLVE-2)", () =
     for (const root of roots) walk(root);
     expect(found).toEqual([]);
     for (const rel of skills) {
-      const body = readFileSync(join(REPO_ROOT, rel), "utf-8");
+      // The composer gate's setters live in the composer.md beside SKILL.md.
+      const body = [rel, rel.replace(/SKILL\.md$/, "composer.md")]
+        .map((file) => readFileSync(join(REPO_ROOT, file), "utf-8"))
+        .join("\n");
       for (const setter of [
         "run `{{INVOKE}} engine config set guard-policy <value>` yourself",
         "running `{{INVOKE}} engine config set summary-confirmation off` yourself",
