@@ -1926,6 +1926,7 @@ describe("t265b hook lifecycle", () => {
           `bun ${entry} engine runtime summary --json 2>&1 | head -c 400`,
           `bun ${entry} engine log answers --stage code-generation --unit todo-core`,
           `bun ${entry} engine audit history --stage code-generation --limit 5`,
+          `bun ${entry} engine audit export`,
           `bun ${entry} engine log decision --stage code-generation --checkpoint plan-approval`,
           `bun ${entry} engine log answer --stage code-generation --checkpoint plan-approval`,
           `bun ${entry} engine bolt checkpoint --unit todo-core`,

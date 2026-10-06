@@ -486,6 +486,8 @@ describe("t242 state-transition ownership guard", () => {
       "aidlc engine worktree restore --slug u1",
       "aidlc engine worktree info --slug u1",
       "bun .claude/tools/aidlc-audit.ts history",
+      "bun .claude/tools/aidlc-audit.ts export",
+      "aidlc engine audit export",
       "aidlc engine audit append PRACTICES_SECTION_EMPTY --field Details=x",
       "aidlc engine plugin select --no-color",
     ]) {

@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import type { AuditTelemetryContext, AuditTelemetryEvent } from "./aidlc-telemetry.ts";
 import { LONG_SUBPROCESS_TIMEOUT_MS } from "./aidlc-runtime-budget.ts";
 import {
   closeSync,
@@ -628,7 +629,9 @@ function refuseProtectedEvent(eventType: string): never {
 // CLI accepts it, and it cannot spoof — the emitter's own `**Timestamp**:` line
 // is written first and every parser takes the first match. renderAuditBlock
 // drops it instead, so it can never render a second line.
-const RESERVED_FIELD_KEYS = new Set(["Event"]);
+// Telemetry is also emitter-owned: a caller cannot supply a saved event ID or
+// session snapshot through the structured append API.
+const RESERVED_FIELD_KEYS = new Set(["Event", "Telemetry"]);
 
 // Keys renderAuditBlock writes itself, and therefore never re-renders from
 // `fields`. `Event` is already refused by RESERVED_FIELD_KEYS before render
@@ -646,6 +649,9 @@ function validateAuditEntry(entry: AuditEntryInput): void {
     );
   }
   for (const key of Object.keys(entry.fields)) {
+    if (key === "Telemetry") {
+      throw new Error("Reserved field key: Telemetry. The audit writer owns correlation snapshots.");
+    }
     if (RESERVED_FIELD_KEYS.has(key)) {
       throw new Error(
         `Reserved field key: ${key}. The emitter writes **${key}**: itself; a caller-supplied ` +
@@ -707,6 +713,39 @@ function tapAuditMetric(
   } catch {
     // Metrics module missing or emit failed - never propagate.
   }
+}
+
+// Telemetry is a persisted snapshot, not an authority receipt. Prepare it
+// before the write, then emit only after that write commits. Lazy loading keeps
+// untouched installs and audit-only fixtures on their existing code path.
+function prepareAuditTelemetry(
+  entry: AuditEntryInput,
+  projectDir: string,
+  shardPath: string,
+): { entry: AuditEntryInput; context: AuditTelemetryContext | null } {
+  if (process.env.AIDLC_AUDIT_TELEMETRY !== "1" && !process.env.AIDLC_OTEL_ENDPOINT?.trim()) {
+    return { entry, context: null };
+  }
+  try {
+    const telemetry = require("./aidlc-telemetry.ts") as typeof import("./aidlc-telemetry.ts");
+    const context = telemetry.captureAuditTelemetry(entry.fields, projectDir, shardPath);
+    return {
+      entry: context
+        ? { ...entry, fields: { ...entry.fields, [telemetry.AUDIT_TELEMETRY_FIELD]: JSON.stringify(context) } }
+        : entry,
+      context,
+    };
+  } catch {
+    return { entry, context: null };
+  }
+}
+
+function tapAuditTelemetry(events: AuditTelemetryEvent[]): void {
+  if (events.length === 0 || !process.env.AIDLC_OTEL_ENDPOINT?.trim()) return;
+  try {
+    const telemetry = require("./aidlc-telemetry.ts") as typeof import("./aidlc-telemetry.ts");
+    telemetry.emitAuditTelemetry(events);
+  } catch { /* optional telemetry must never break audit */ }
 }
 
 // Core append logic — throws on error instead of exiting. Safe for library callers.
@@ -805,13 +844,16 @@ export function appendAuditEntryUnlocked(
   const entry = { eventType, fields };
   validateAuditEntry(entry);
   const ts = isoTimestamp();
+  const shardPath = auditFilePath(projectDir, intent, space);
+  const prepared = prepareAuditTelemetry(entry, projectDir, shardPath);
   appendAuditBlockAtPath(
     projectDir,
-    auditFilePath(projectDir, intent, space),
-    renderAuditBlock(entry, ts, projectDir),
+    shardPath,
+    renderAuditBlock(prepared.entry, ts, projectDir),
   );
 
   tapAuditMetric(eventType, fields, projectDir);
+  if (prepared.context) tapAuditTelemetry([{ eventType, timestamp: ts, context: prepared.context }]);
 
   return { appended: true, event: eventType, timestamp: ts };
 }
@@ -1000,12 +1042,14 @@ export function appendAuditEntryAtPathUnlocked(
   const entry = { eventType, fields };
   validateAuditEntry(entry);
   const ts = isoTimestamp();
+  const prepared = prepareAuditTelemetry(entry, projectDir, shardPath);
   appendAuditBlockAtPath(
     projectDir,
     shardPath,
-    renderAuditBlock(entry, ts, projectDir),
+    renderAuditBlock(prepared.entry, ts, projectDir),
   );
   tapAuditMetric(eventType, fields, projectDir);
+  if (prepared.context) tapAuditTelemetry([{ eventType, timestamp: ts, context: prepared.context }]);
   return { appended: true, event: eventType, timestamp: ts };
 }
 
@@ -1027,15 +1071,20 @@ export function appendAuditEntries(
 
   const append = (): { appended: true; events: string[]; timestamps: string[] } => {
     const timestamps = entries.map(() => isoTimestamp());
-    const payload = entries
-      .map((entry, index) =>
+    const shardPath = auditFilePath(projectDir, intent, space);
+    const prepared = entries.map((entry) => prepareAuditTelemetry(entry, projectDir, shardPath));
+    const payload = prepared
+      .map(({ entry }, index) =>
         renderAuditBlock(entry, timestamps[index], projectDir)
       )
       .join("");
-    appendAuditBlockAtPath(projectDir, auditFilePath(projectDir, intent, space), payload);
+    appendAuditBlockAtPath(projectDir, shardPath, payload);
     for (const entry of entries) {
       tapAuditMetric(entry.eventType, entry.fields, projectDir);
     }
+    tapAuditTelemetry(prepared.flatMap(({ entry, context }, index) =>
+      context ? [{ eventType: entry.eventType, timestamp: timestamps[index], context }] : [],
+    ));
     return {
       appended: true,
       events: entries.map((entry) => entry.eventType),
@@ -1561,10 +1610,11 @@ function handleAuditFork(args: string[], projectDir: string): void {
       };
       validateAuditEntry(forkEntry);
       auditTs = isoTimestamp();
+      const prepared = prepareAuditTelemetry(forkEntry, projectDir, mainAuditPath);
       appendAuditBlockAtPath(
         projectDir,
         mainAuditPath,
-        renderAuditBlock(forkEntry, auditTs, projectDir),
+        renderAuditBlock(prepared.entry, auditTs, projectDir),
         {
           ...before.identity,
           prefixLength: boundary,
@@ -1572,6 +1622,9 @@ function handleAuditFork(args: string[], projectDir: string): void {
         },
       );
       tapAuditMetric("AUDIT_FORKED", forkEntry.fields, projectDir);
+      if (prepared.context) {
+        tapAuditTelemetry([{ eventType: "AUDIT_FORKED", timestamp: auditTs, context: prepared.context }]);
+      }
 
       // Worktree-local tools must append to the fork shard that audit-merge
       // consumes. Swarm worktrees share the parent clone token; claimed Unit
@@ -1844,12 +1897,13 @@ function handleAuditMerge(args: string[], projectDir: string): void {
       };
       validateAuditEntry(mergedEntry);
       const mergedTimestamp = isoTimestamp();
+      const prepared = prepareAuditTelemetry(mergedEntry, projectDir, mainAuditPath);
       // Delta and receipt share one descriptor-pinned append, so no unsafe raw
       // append can bypass the normal shard protections or interleave between them.
       appendAuditBlockAtPath(
         projectDir,
         mainAuditPath,
-        delta + renderAuditBlock(mergedEntry, mergedTimestamp, projectDir),
+        delta + renderAuditBlock(prepared.entry, mergedTimestamp, projectDir),
         {
           ...mainSnapshot.identity,
           prefixLength: boundary,
@@ -1857,6 +1911,9 @@ function handleAuditMerge(args: string[], projectDir: string): void {
         },
       );
       tapAuditMetric("AUDIT_MERGED", mergedEntry.fields, projectDir);
+      if (prepared.context) {
+        tapAuditTelemetry([{ eventType: "AUDIT_MERGED", timestamp: mergedTimestamp, context: prepared.context }]);
+      }
       result = { timestamp: mergedTimestamp };
     }
   } catch (e) {
@@ -1974,10 +2031,23 @@ export function main(argv: string[]): void {
   const subcommand = filteredArgs[0];
 
   if (!subcommand) {
-    jsonError("Usage: aidlc-audit <append|append-batch|append-raw|history|audit-fork|audit-merge> [args...]");
+    jsonError("Usage: aidlc-audit <append|append-batch|append-raw|history|export|audit-fork|audit-merge> [args...]");
   }
 
   switch (subcommand) {
+    case "export":
+      if (filteredArgs.slice(1).some((arg) => !["--json", "--human", "--no-color"].includes(arg))) {
+        jsonError("audit export accepts no data arguments.");
+      }
+      try {
+        const telemetry = require("./aidlc-telemetry.ts") as typeof import("./aidlc-telemetry.ts");
+        const events = telemetry.auditTelemetryEvents(sortAttemptEvents(readActiveAuditShardEvents(projectDir)));
+        console.log(JSON.stringify(telemetry.buildAuditOtlpExport(events)));
+      } catch (e) {
+        jsonError(errorMessage(e));
+      }
+      break;
+
     case "history":
       handleHistory(filteredArgs.slice(1), projectDir);
       break;
@@ -2024,7 +2094,7 @@ export function main(argv: string[]): void {
       break;
 
     default:
-      jsonError(`Unknown subcommand: ${subcommand}. Expected: append, append-batch, append-raw, history, audit-fork, audit-merge`);
+      jsonError(`Unknown subcommand: ${subcommand}. Expected: append, append-batch, append-raw, history, export, audit-fork, audit-merge`);
   }
 }
 

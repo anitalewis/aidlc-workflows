@@ -668,6 +668,16 @@ export const ROUTES: readonly Route[] = [
     ...HIDDEN_ENGINE,
   },
   {
+    id: "audit-export",
+    group: "audit",
+    kind: "noun-passthrough",
+    classification: "passthrough",
+    verbs: ["export"],
+    tool: TOOLS.audit,
+    ...HIDDEN_ENGINE,
+    mutationScope: "none",
+  },
+  {
     id: "audit-renames",
     group: "audit",
     kind: "noun-map",
@@ -3256,6 +3266,11 @@ export async function main(rawArgv: string[]): Promise<void> {
   if (argv.length === 1 && argv[0] === "--internal-metrics-send") {
     const metrics = await import("./aidlc-metrics.ts");
     await metrics.sendMetricFromStdin();
+    return;
+  }
+  if (argv.length === 1 && argv[0] === "--internal-audit-telemetry-send") {
+    const telemetry = await import("./aidlc-telemetry.ts");
+    await telemetry.sendAuditTelemetryFromStdin();
     return;
   }
   const commandHelp = commandHelpRequest(argv);

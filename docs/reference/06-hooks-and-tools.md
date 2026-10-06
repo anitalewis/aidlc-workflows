@@ -2273,6 +2273,43 @@ Every audit event emits a `<prefix>.<event_type>:1|c` counter; `STAGE_COMPLETED`
 
 The transcript reader is **Claude-Code-format-specific**, and only the Claude harness wires a producer (the fold hook on both PreToolUse and PostToolUse, plus the Stop-hook flush). Kiro, Codex, and opencode wire no producer: their ledger is never written, so the statusline shows no cost segment, the audit rollup adds no fields, and the metrics path (if an endpoint is set) still emits the per-event counters but no token/cost magnitude lines. Every consumer degrades silently to no-data rather than erroring.
 
+### Native telemetry correlation (opt-in, all harnesses)
+
+`aidlc-telemetry.ts` exports workflow metadata from the shared audit writer as
+OTLP/HTTP JSON logs. Native harness/provider telemetry supplies measured tokens,
+credits, model and reported effort; AI-DLC supplies event IDs, native session
+IDs, intent/stage/unit identifiers and separately labeled configured
+model/effort. No new native transcript parser is involved.
+
+| Env var | Effect |
+|---------|--------|
+| `AIDLC_AUDIT_TELEMETRY` | `1` saves a versioned `Telemetry` snapshot with each structured audit event; default off. |
+| `AIDLC_OTEL_ENDPOINT` | Full OTLP/HTTP logs URL (including `/v1/logs`); enables snapshots and best-effort delivery. Unset means no delivery. |
+| `AIDLC_OTEL_HEADERS` | Optional headers, one `Header-Name: value` per line, passed privately to the worker through stdin. |
+
+Single events, batches, explicit shard writes, and fork/merge receipts share
+this path. Delivery runs after a successful append, in a detached worker with
+a three-second timeout and no redirect following. The existing offline setting
+suppresses delivery. With both opt-ins absent, audit bytes remain unchanged.
+Prompts, answers, free-form details, artifact contents, absolute project paths,
+credentials and usage rollups are excluded from the exported metadata.
+
+`aidlc engine audit export` writes one raw OTLP request body to stdout for the
+active intent. It is a read-only command: no network call, lock, cursor update,
+or reconstruction of historical context from current settings. It exports
+saved snapshots only, deduplicates copied event IDs, refuses conflicting
+snapshots, and skips notes and unsupported/absent snapshots. Unlike the
+human-content history commands, this allowlisted metadata export is the wire
+payload itself, with no `data_notice` wrapper. Legacy rows are not backfilled.
+
+The receiving pipeline must deduplicate replayed events and normalize native
+session IDs. Missing usage remains unknown. A time-window stage association
+is an inference; overlapping stages or usage without a usable session/interval
+must remain unattributed. See the [feature proposal and correlation
+contract](../proposals/audit-telemetry-correlation.md), including a reference
+consumer runnable as
+`bun scripts/telemetry-correlate.ts audit-otlp.json usage.json`.
+
 ---
 
 ## Prerequisites

@@ -2163,6 +2163,22 @@ describe("t230 native review-brief dispatch", () => {
 });
 
 describe("t230 dispatcher route completeness", () => {
+  test("audit export is a project-selected read with no network or mutation", () => {
+    expect(routePolicyFor(["engine", "audit", "export"])).toMatchObject({
+      id: "audit-export",
+      namespace: "engine",
+      visibility: "hidden",
+      projectRequirement: "required",
+      pinPolicy: "pinned",
+      networkPolicy: "forbidden",
+      mutationScope: "none",
+      outputModes: ["human", "json"],
+    });
+    expect(resolveAction(["engine", "audit", "export"])).toMatchObject({
+      type: "delegate", tool: "aidlc-audit.ts", args: ["export"],
+    });
+  });
+
   test("every route declares the complete normative execution policy", () => {
     for (const route of ROUTES) {
       expect(["public", "engine", "system"]).toContain(route.namespace);
