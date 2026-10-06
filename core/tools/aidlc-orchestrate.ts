@@ -1946,8 +1946,9 @@ function documentSplitSentence(raw: string): string {
 // One complete, shell-quoted command per valid scope, so a human's choice of
 // another plan never becomes conductor-built shell text.
 // Each plan the person can name instead, with its stage count for this
-// project counted as the offer's own question counts it, so a host that shows
-// the plans as choices never shows a number of its own.
+// project counted as the offer's own question counts it (the stages after
+// Initialization, the count the progress line uses), so a host that shows the
+// plans as choices never shows a number of its own.
 function scopeCommands(
   prefix: string,
   questionId: string,
@@ -1960,7 +1961,7 @@ function scopeCommands(
     return {
       scope,
       command: `${prefix} --scope ${scopeArg(scope)} --request ${questionId}${carried}`,
-      ...(cost ? { stages: `${cost.execute} of ${cost.total} stages` } : {}),
+      ...(cost ? { stages: `${cost.shown} ${cost.shown === 1 ? "stage" : "stages"}` } : {}),
     };
   });
 }
