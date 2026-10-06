@@ -248,7 +248,7 @@ describe("t10 session-start SessionStart hook (mechanism cli — spawned hook + 
     const parsed = JSON.parse(fire(proj, '{"source":"compact"}').stdout.trim());
     expect(parsed.additionalContext).toContain('AI-DLC answers with one line, "AI-DLC is carrying on with <stage>."');
     expect(parsed.additionalContext).toContain(
-      "It is from AI-DLC, not the person: never record it as their answer, and say nothing about it.",
+      "It is from AI-DLC, not the person: never record it as their answer, and say it to them only where the aidlc skill says so.",
     );
     expect(parsed.additionalContext).toContain(
       "if you just asked the person a question you have not recorded, record it with `log decision` and end the turn without asking it again",

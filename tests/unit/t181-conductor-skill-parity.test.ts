@@ -36,6 +36,13 @@ import { REPO_ROOT } from "../harness/fixtures.ts";
 import { HARNESS_MATRIX } from "../harness/harness-matrix.ts";
 
 /** Authored conductor SKILLs for every manifest-discovered distribution. */
+// The tools that hide the Stop note from the person, by the name the skill
+// gives them; their agent says the carrying-on line itself.
+const SAYS_THE_LINE: Record<string, string> = {
+  "harness/kiro-ide/skills/aidlc/SKILL.md": "Kiro IDE",
+  "harness/opencode/skills/aidlc/SKILL.md": "opencode",
+};
+
 function harnessSkills(): string[] {
   return HARNESS_MATRIX
     .map((harness) => `harness/${harness.name}/skills/aidlc/SKILL.md`)
@@ -320,7 +327,8 @@ describe("t181 per-harness conductor-SKILL freshness gate (P11 RESOLVE-2)", () =
       const body = readFileSync(join(REPO_ROOT, rel), "utf-8");
       return [
         ...(body.includes(clause) ? [] : [`${rel}: clause`]),
-        ...(body.includes(forYou) ? [] : [`${rel}: for you`]),
+        // The tools that hide the note have the agent say the line instead.
+        ...(SAYS_THE_LINE[rel] !== undefined || body.includes(forYou) ? [] : [`${rel}: for you`]),
         ...(body.includes("For a problem, follow the `error` row.") ? [] : [`${rel}: problem`]),
         ...(body.includes(waiting) ? [] : [`${rel}: waiting`]),
         ...(body.includes("adding `--unit \"<directive.unit>\"` in team-owned Unit work") ? [] : [`${rel}: unit`]),
@@ -329,6 +337,36 @@ describe("t181 per-harness conductor-SKILL freshness gate (P11 RESOLVE-2)", () =
       ];
     });
     expect(missing).toEqual([]);
+  });
+
+  // The person on every tool gets the same one line. Claude Code, Codex and
+  // Copilot show the note itself (as do Cursor's follow-up message and, for
+  // now, Kiro CLI), so their agent says nothing about it; opencode and Kiro IDE
+  // hide it, so their agent says the line once, word for word.
+  test("only the skills of tools that hide the stop note have the agent say its line", () => {
+    const sayOnce = " does not show the note to the person, so when it is the carrying-on line, say that line to them once, " +
+      "word for word and as a sentence of its own, before you carry on (the stage it names, with \" for <unit>\" when it names a Unit, " +
+      "or just \"AI-DLC is carrying on.\" when it names none), and say nothing else about the note.";
+    const forYou = "it is for you, not for the person (some tools show it to them too), so say nothing about it.";
+    const problems = skills.flatMap((rel) => {
+      const body = readFileSync(join(REPO_ROOT, rel), "utf-8");
+      const tool = SAYS_THE_LINE[rel];
+      if (tool === undefined) {
+        return [
+          ...(body.includes(forYou) ? [] : [`${rel}: says nothing about the note`]),
+          ...(body.includes("say that line to them once") ? [`${rel}: must not say the line`] : []),
+        ];
+      }
+      return [
+        ...(body.includes(`${tool}${sayOnce}`) ? [] : [`${rel}: says the line once`]),
+        ...(body.includes(forYou) ? [`${rel}: must not say nothing`] : []),
+      ];
+    });
+    expect(problems).toEqual([]);
+    expect(Object.keys(SAYS_THE_LINE).sort()).toEqual([
+      "harness/kiro-ide/skills/aidlc/SKILL.md",
+      "harness/opencode/skills/aidlc/SKILL.md",
+    ]);
   });
 
   test("every SKILL and the onboarding switch a check when the person asks, with no typing for them", () => {
@@ -456,7 +494,13 @@ describe("t181 per-harness conductor-SKILL freshness gate (P11 RESOLVE-2)", () =
       const end = body.indexOf("**Isolated stage-runner branch.**");
       expect(start, `${rel} lacks the narration rule`).toBeGreaterThan(-1);
       expect(end, `${rel} lacks the isolated-run anchor`).toBeGreaterThan(start);
-      const block = body.slice(start, end).trim();
+      // The one sentence on whether the agent says the Stop note's line
+      // differs by tool on purpose (pinned by "only the skills of tools that
+      // hide the stop note have the agent say its line"); the rest is shared.
+      const block = body.slice(start, end).trim().replace(
+        /That note is from AI-DLC, not from the person, so never record it as their answer or reply to it as if they wrote it[^\n]*?(?:so say nothing about it\.|and say nothing else about the note\.)/,
+        "<the per-tool Stop-note sentence>",
+      );
       const seen = blocks.get(block) ?? [];
       seen.push(rel);
       blocks.set(block, seen);

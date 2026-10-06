@@ -8,7 +8,8 @@
 // spawn, zero LLM).
 //   (a) every authored conductor SKILL carries ONE "When AI-DLC carries on by
 //       itself" paragraph with each step the old notes gave the agent;
-//   (b) every skill says the note is for the agent, so it says nothing about it;
+//   (b) where the tool shows the note the agent says nothing about it, and
+//       where it hides the note (opencode, Kiro IDE) the agent says the line once;
 //   (c) the old agent-addressed wordings are gone from every prose surface and
 //       stay in the hook only as the matcher for older transcripts;
 //   (d) a stage the agent was working on ends with the exact `report` built
@@ -70,14 +71,30 @@ describe("t-stop-carries-on-line: the agent's steps for the one-line Stop note",
     }
   });
 
-  test("(b) every tool's agent says nothing about the note: it is for the agent, and some tools show it", () => {
+  test("(b) the person on every tool gets the line once: shown by the tool, or said by the agent where the tool hides it", () => {
+    const hides: Record<string, string> = {
+      "harness/kiro-ide/skills/aidlc/SKILL.md": "Kiro IDE",
+      "harness/opencode/skills/aidlc/SKILL.md": "opencode",
+    };
     for (const rel of skillPaths()) {
       const paragraph = carryOnParagraph(rel);
-      expect(paragraph, rel).toContain(
-        "it is for you, not for the person (some tools show it to them too), so say nothing about it.",
-      );
-      expect(paragraph, rel).not.toContain("Say that line to the person");
-      expect(paragraph, rel).not.toContain("already shows that line");
+      const tool = hides[rel];
+      if (tool === undefined) {
+        expect(paragraph, rel).toContain(
+          "it is for you, not for the person (some tools show it to them too), so say nothing about it.",
+        );
+        expect(paragraph, rel).not.toContain("say that line to them once");
+      } else {
+        // One plain sentence in the agent's own reply: the line as the note
+        // names it, and nothing else about the note.
+        expect(paragraph, rel).toContain(
+          `${tool} does not show the note to the person, so when it is the carrying-on line, say that line to them once, ` +
+            "word for word and as a sentence of its own, before you carry on",
+        );
+        expect(paragraph, rel).toContain('with " for <unit>" when it names a Unit, or just "AI-DLC is carrying on." when it names none');
+        expect(paragraph, rel).toContain("and say nothing else about the note.");
+        expect(paragraph, rel).not.toContain("so say nothing about it.");
+      }
     }
   });
 

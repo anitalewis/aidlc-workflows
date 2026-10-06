@@ -893,6 +893,69 @@ describe("t149 Codex hook adapter (live-captured payload fixtures)", () => {
     }
   });
 
+  // Codex 0.160 stores the Stop reason as a user message wrapped in its own
+  // <hook_prompt hook_run_id="stop:..."> tag, with < > & escaped (live run:
+  // engine call, a reply, the blocked stop, the wrapped note, then a reply
+  // with no engine call). The wrapped note is still the hook's, so that reply
+  // does not make the turn chat: the stop blocks again.
+  function stopAfterHookPrompt(dir: string, wrapped: string): string {
+    const entry = (payload: Record<string, unknown>) => JSON.stringify({ type: "response_item", payload });
+    const transcript = join(dir, "rollout-2026-10-06T09-26-38.jsonl");
+    writeFileSync(transcript, [
+      entry({ type: "message", role: "user", content: [{ type: "input_text", text: "Run AI-DLC's next step and tell me in one line what it asks for." }] }),
+      entry({ type: "function_call", name: "Bash", arguments: JSON.stringify({ command: "bun .codex/tools/aidlc.ts engine orchestrate next" }) }),
+      entry({ type: "message", role: "assistant", content: [{ type: "output_text", text: "AI-DLC asks the developer to analyze the existing code before Requirements Analysis." }] }),
+      entry({ type: "message", role: "user", content: [{ type: "input_text", text: wrapped }] }),
+      entry({ type: "message", role: "assistant", content: [{ type: "output_text", text: "Still waiting on the developer." }] }),
+    ].join("\n") + "\n", "utf-8");
+    return runAdapter(dir, "continue-workflow", withCwd({ ...FIXTURES.stop, transcript_path: transcript }, dir)).stdout.trim();
+  }
+  const hookPrompt = (dir: string, inner: string) =>
+    `<hook_prompt hook_run_id="stop:14:${dir}/.codex/hooks.json">${inner}</hook_prompt>`;
+  // The live note, word for word as the rollout stored it.
+  const LIVE_WRAPPED_NOTE =
+    'The AI-DLC workflow is not finished (current stage "reverse-engineering"). If you just asked the person a question and are waiting for the answer, run `bun .codex/tools/aidlc.ts engine log decision --stage reverse-engineering --decision "&lt;the question&gt;" --options "&lt;the choices&gt;"`, adding any `--single`, `--checkpoint` or `--questions-file` flags that question\'s own instructions use, and end your turn without asking it again. Otherwise run `bun .codex/tools/aidlc-orchestrate.ts next`, do what the step it prints asks, then run `bun .codex/tools/aidlc-orchestrate.ts report --stage &lt;stage&gt; --result &lt;outcome&gt;`; repeat until it answers `done`. If the person asked to stop here, run `bun .codex/tools/aidlc-orchestrate.ts park`. Never mark a stage done or approved just to end the turn, and tell the person nothing about this note.';
+
+  test("1e: Codex's wrapped stop note is the hook's, so a reply with no engine call is still sent on", () => {
+    for (const inner of [
+      LIVE_WRAPPED_NOTE,
+      "AI-DLC is carrying on with Requirements Analysis.",
+      "AI-DLC is carrying on with Feedback &amp; Optimization.",
+      "AI-DLC is carrying on.",
+      "Requirements Analysis is not finished yet. Next: `bun .codex/tools/aidlc-orchestrate.ts next`.",
+    ]) {
+      const dir = scratchProject(true);
+      try {
+        const out = stopAfterHookPrompt(dir, hookPrompt(dir, inner));
+        expect((JSON.parse(out || "{}") as { decision?: string }).decision, inner).toBe("block");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  // Only that exact wrapper around one of the hook's own lines is unwrapped.
+  // A person's message with the tag and words of their own, a wrapped text
+  // that is not a hook line, or another wrapper stays the person's: the
+  // answer to it with no engine call ends the turn.
+  test("1f: a person's message that only looks like Codex's wrapper is still the person", () => {
+    for (const said of [
+      (dir: string) => `${hookPrompt(dir, "AI-DLC is carrying on with Requirements Analysis.")} why does this keep showing up?`,
+      (dir: string) => `what is this? ${hookPrompt(dir, "AI-DLC is carrying on with Requirements Analysis.")}`,
+      (dir: string) => hookPrompt(dir, "please explain the plan"),
+      () => '<hook_prompt hook_run_id="session:1">AI-DLC is carrying on with Requirements Analysis.</hook_prompt>',
+      () => "<hook_prompt>AI-DLC is carrying on with Requirements Analysis.</hook_prompt>",
+    ]) {
+      const dir = scratchProject(true);
+      try {
+        const message = said(dir);
+        expect(stopAfterMessage(dir, message), message).toBe("");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  });
+
   test("2: stop is silent (no block) when no workflow state exists", () => {
     const dir = scratchProject(false);
     try {
