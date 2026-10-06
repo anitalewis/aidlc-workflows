@@ -405,28 +405,19 @@ question.
 Then present the structured approval question as defined above.
 
 ### Part 4: Progress update (mandatory — after user approves)
-After the user selects "Approve", display a progress line before proceeding.
+After the user selects "Approve", say the progress line the approval's reply carries as its `narration`, word for word; never count stages yourself. When the reply carries none, say no progress line.
 
-**When every compiled stage is in scope**:
-```
-Progress: [N]/33 overall | [phase-N]/[phase-total] [Phase] stages complete. Next: [Next Stage Name]
-```
-
-**When the active scope executes fewer stages than the compiled total**, show
-in-scope progress with overall shown parenthetically:
+The engine counts the stages the plan runs after Initialization, the ones the person was shown, and puts the overall count of every compiled stage finished so far in parentheses:
 ```
 Progress: [X]/[S] in-scope stages complete ([N]/33 overall) | [phase-N]/[phase-total] [Phase]. Next: [Next Stage Name]
 ```
-Keep this format exactly as shown. `S` = the number of stages this workflow
-actually runs, read from the current scope's compiled totals. Use
-`{{INVOKE}} engine gen scope-table` when you need those
-totals; never carry a hand-maintained per-scope count table in this protocol,
-and never narrate where the number came from.
+When every compiled stage is in the plan, the line is:
+```
+Progress: [N]/33 overall | [phase-N]/[phase-total] [Phase] stages complete. Next: [Next Stage Name]
+```
+The phase part counts the approved stage's phase within the plan.
 
-Example (full-scope): "Progress: 13/33 overall | 3/7 IDEATION stages complete. Next: Approval & Handoff"
-Example (reduced-scope): "Progress: 5/8 in-scope stages complete (7/33 overall) | 2/3 CONSTRUCTION. Next: Build & Test"
-
-Count only stages in the current phase (INITIALIZATION, IDEATION, INCEPTION, CONSTRUCTION, or OPERATION). Include both completed and skipped stages in the numerator.
+Example (reduced-scope): "Progress: 2/6 in-scope stages complete (5/33 overall) | 2/2 INCEPTION. Next: Code Generation"
 
 ---
 

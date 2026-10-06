@@ -287,6 +287,13 @@ This shows:
 - Progress within the current phase
 - The name of the next stage
 
+On a plan that runs fewer stages, the line counts the plan's stages after
+Initialization, the ones you were shown, with the overall count in parentheses:
+
+```
+Progress: 2/6 in-scope stages complete (5/33 overall) | 2/2 INCEPTION. Next: Code Generation
+```
+
 ---
 
 ## Next Steps

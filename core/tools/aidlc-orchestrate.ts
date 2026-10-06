@@ -13156,6 +13156,30 @@ function emitTypedResumeChoice(
 // the report just wrote: the conductor runs `next` at once instead of telling
 // the person the work is complete (#1411). The workflow-complete `done` and an
 // isolated `--single` run's `done` carry nothing.
+// The progress line said after an approval. It counts the stages the plan runs
+// after Initialization (the ones the person was shown) and, in the overall
+// count, every compiled stage finished so far; the phase part counts the
+// approved stage's phase within the plan. Null when no stage follows.
+function approvalProgressLine(stateContent: string, approvedSlug: string, scope: string): string | null {
+  const graph = loadGraph().filter((stage) => stage.enabled !== false);
+  const approved = graph.find((stage) => stage.slug === approvedSlug);
+  const next = nextInScopeStage(approvedSlug, scope, stateContent);
+  if (!approved || approved.phase === "initialization" || !next) return null;
+  const boxes = parseCheckboxes(stateContent);
+  const finished = (slug: string) => checkboxStateOf(boxes, slug) === "completed";
+  const runs = (slug: string) =>
+    finished(slug) ||
+    (checkboxStateOf(boxes, slug) !== "skipped" && effectivePlanAction(slug, scope, stateContent) === "EXECUTE");
+  const planned = graph.filter((stage) => stage.phase !== "initialization" && runs(stage.slug));
+  const inPhase = planned.filter((stage) => stage.phase === approved.phase);
+  const overall = `${graph.filter((stage) => finished(stage.slug)).length}/${graph.length}`;
+  const phase = `${inPhase.filter((stage) => finished(stage.slug)).length}/${inPhase.length} ${approved.phase.toUpperCase()}`;
+  return graph.every((stage) => runs(stage.slug))
+    ? `Progress: ${overall} overall | ${phase} stages complete. Next: ${next.name}`
+    : `Progress: ${planned.filter((stage) => finished(stage.slug)).length}/${planned.length} in-scope stages complete ` +
+      `(${overall} overall) | ${phase}. Next: ${next.name}`;
+}
+
 function workflowContinues(pd: string): { workflow_continues?: true } {
   const after = loadStateFileIfPresent(pd);
   return after !== null && getField(after, "Status")?.trim() !== "Completed"
@@ -14109,6 +14133,8 @@ function handleReport(args: string[], projectDir: string | undefined): void {
     emit(withChangeNotices(parked, changeNotices));
     return;
   }
+  const approvedState = flags.result === "approved" ? loadStateFileIfPresent(pd) : null;
+  const progress = approvedState === null ? null : approvalProgressLine(approvedState, slug, scope);
   emit(
     withChangeNotices(
       {
@@ -14116,6 +14142,7 @@ function handleReport(args: string[], projectDir: string | undefined): void {
         reason:
           `Committed ${committed.join(" + ")} for "${slug}" (scope: ${scope}). ` +
           "State advanced; run next to continue.",
+        ...(progress ? { narration: progress } : {}),
         ...workflowContinues(pd),
       },
       changeNotices,
