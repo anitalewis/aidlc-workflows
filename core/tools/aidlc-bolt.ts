@@ -77,7 +77,7 @@ import {
   withAuditLock,
   worktreeStateFilePath,
   writeStateFile,
-  VERIFICATION_COMMAND_RECOVERY,
+  verificationCommandRecovery,
   type BoltIdentity,
   legacyParkedRefPrefix,
   resolveInvokingSessionId,
@@ -1326,7 +1326,7 @@ function handleCheckpoint(args: string[]): void {
     error("checkpoint --over-unfinished-review goes with --action verify.");
   }
   if (flags["check-cmd"] !== undefined) {
-    error("checkpoint no longer accepts --check-cmd. " + VERIFICATION_COMMAND_RECOVERY + " Run checkpoint --action verify without --check-cmd.");
+    error("checkpoint no longer accepts --check-cmd. " + verificationCommandRecovery() + " Run checkpoint --action verify without --check-cmd.");
   }
   if (!flags.unit) error("checkpoint requires --unit <name>");
   const kind = flags.kind ?? "unit";

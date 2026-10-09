@@ -46,7 +46,7 @@ import {
   readVerificationCommandFile,
   withdrawProtectedQuestions,
   VERIFICATION_COMMAND_CHECKPOINT,
-  VERIFICATION_COMMAND_RECOVERY,
+  verificationCommandRecovery,
   constructionPolicyChangeAuthority,
   CONSTRUCTION_POLICY_RECOVERY,
   latestPersonTurn,
@@ -1141,7 +1141,7 @@ function handleSetConstructionVerificationCommand(args: string[]): void {
       ? command.command : command.command.replaceAll("$", "$$$$");
     const updated = setOrInsertField(content, "## Runtime State", VERIFICATION_COMMAND_CHECKPOINT, value);
     if (!authorizedVerificationCommand(pd, updated)) {
-      error("No current VERIFICATION_COMMAND_RECORDED with matching Command SHA-256 and User Input: Approve authorizes this command. " + VERIFICATION_COMMAND_RECOVERY);
+      error("No current VERIFICATION_COMMAND_RECORDED with matching Command SHA-256 and User Input: Approve authorizes this command. " + verificationCommandRecovery());
     }
     writeStateFile(pd, updated);
     // A new command checks the Units and batches still to be approved; the

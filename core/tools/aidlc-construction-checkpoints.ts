@@ -17,7 +17,7 @@ import {
   constructionSkeletonOn,
   auditBlockField,
   authorizedVerificationCommand,
-  VERIFICATION_COMMAND_RECOVERY,
+  verificationCommandRecovery,
   type VerificationCommand,
   claimAttemptFields,
   completionCarriesVerifiedReview,
@@ -1302,7 +1302,7 @@ function verifyOnce(
     const notices = recordAcceptedChanges(projectDir, changes);
     const authorization = current.verificationCommand;
     if (!authorization) {
-      throw new Error("Construction verification requires the state's command and a matching current VERIFICATION_COMMAND_RECORDED receipt. " + VERIFICATION_COMMAND_RECOVERY);
+      throw new Error("Construction verification requires the state's command and a matching current VERIFICATION_COMMAND_RECORDED receipt. " + verificationCommandRecovery());
     }
     const proof: ConstructionCheckpointProof = {
       version: 4, id: randomUUID(), kind, unit, fingerprint: current.result.fingerprint,

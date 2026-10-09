@@ -3836,6 +3836,8 @@ export interface ParsedFlags {
    * passed on from SessionStart, and none of the person's words.
    */
   agentSessionOnly?: boolean;
+  // An answer argument sent to `next` instead of the question's answer command.
+  misplacedChoice?: boolean;
   retiredFlags?: string[];
   retiredOnly?: boolean;
 }
@@ -4217,6 +4219,12 @@ export function parseNextFlags(argv: string[]): ParsedFlags {
       i++;
     } else if (a === "--rhythm") {
       flags.parseError = "--rhythm requires <per-stage|unit-end>.";
+    } else if ((a === "--choice" || a.startsWith("--choice=")) && intentWords.length === 0) {
+      // Like a leading --session, this is the agent's argument, not work the
+      // person asked to start. Its value grants nothing: the question's answer
+      // command still owns recording the person's actual reply.
+      flags.misplacedChoice = true;
+      if (a === "--choice" && i + 1 < args.length && !args[i + 1].startsWith("--")) i++;
     } else if (a === "--session" && intentWords.length === 0 && i + 1 < args.length && !args[i + 1].startsWith("--")) {
       // This chat's session id, which SessionStart gives the agent for Plan
       // Approval's --session; `next` finds its session on its own. Read as task
@@ -7193,6 +7201,23 @@ function routeNext(args: string[], projectDir: string | undefined): void {
 
   if (flags.parseError) {
     emit(errorDirective(flags.parseError));
+    return;
+  }
+
+  if (flags.misplacedChoice) {
+    const open = openPlanApprovalQuestion(resolveProjectDir(projectDir), "");
+    const next = `${aidlcToolInvocation("orchestrate")} next`;
+    // A correction to the agent's command is its next action, not an error
+    // that ends the turn or a new-work question that replaces the pending ask.
+    emit(printDirective(
+      "`next` does not accept `--choice`. " +
+      (open && !open.editing
+        ? "Read the person's reply to the open Plan Approval question and record the choice they made with " +
+          `\`${aidlcToolInvocation("log")} answer --stage code-generation --checkpoint plan-approval --details '<their choice>'\`, ` +
+          `then run \`${next}\` with no answer arguments. If they have not replied, wait at that question.`
+        : `Run \`${next}\` with no answer arguments and follow the step it returns. ` +
+          "Record a reply using the answer command issued for that question."),
+    ));
     return;
   }
 

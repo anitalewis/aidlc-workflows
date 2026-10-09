@@ -20,6 +20,7 @@ import {
   type KiroLayout,
   knownActiveSpace,
   kiroTreeLayout,
+  quoteCommandArgument,
   resolveHarnessPath,
   runtimeHarnessDir,
   runtimeHarnessName,
@@ -5046,7 +5047,7 @@ export function requireProtectedResponse(
 ): void {
   const question = readProtectedQuestion(projectDir, session);
   const response = readProtectedResponse(projectDir, session);
-  const recovery = expected.kind === "verification-command" ? VERIFICATION_COMMAND_RECOVERY
+  const recovery = expected.kind === "verification-command" ? verificationCommandRecovery()
     : expected.kind === "construction-policy" ? CONSTRUCTION_POLICY_RECOVERY
     : 'Re-ask with aidlc bolt checkpoint --action ask --unit "<unit>" --kind <unit|skeleton> or aidlc bolt swarm-checkpoint --action ask --batch <number> --units "<units>", then wait for Approve or Request Changes.';
   // The person replied to this exact question (the hook's record); the choice
@@ -12345,13 +12346,24 @@ export function authorizedVerificationCommand(
     ? command : null;
 }
 
-export const VERIFICATION_COMMAND_RECOVERY =
-  'Write the proposed command to <record>/verification-command.txt with the harness file-write tool (never shell echo or a heredoc); never interpolate repo-derived command text into a shell line. ' +
-  'Record the human choice with aidlc-log.ts decision --stage "<stage>" --checkpoint verification-command ' +
-  '--command-file verification-command.txt --decision "Use this command to verify each completed Unit?" --options "Approve,Request Changes", ' +
-  'then wait for the human\'s offered choice in that session and run aidlc-log.ts answer --stage "<stage>" --checkpoint verification-command --command-file verification-command.txt --details "Approve". ' +
-  'Both commands find the session they run in. ' +
-  'Apply the receipt with aidlc-state.ts set-construction-verification-command --command-file verification-command.txt.';
+// The same sequence rides with an unauthorized checkpoint and its refusals.
+// Registering the question after showing it loses the reply to that question.
+export function verificationCommandRecovery(
+  stage = "<stage>",
+  logInvocation = aidlcToolInvocation("log"),
+  stateInvocation = aidlcToolInvocation("state"),
+): string {
+  const identity = `--stage ${quoteCommandArgument(stage)} --checkpoint verification-command --command-file verification-command.txt`;
+  return "If this command already has a current approval receipt, apply it without asking again. Otherwise, " +
+    "write the proposed command to <record>/verification-command.txt with the harness file-write tool (never shell echo or a heredoc); never interpolate repo-derived command text into a shell line. " +
+    `Before showing the question, register it with \`${logInvocation} decision ${identity} ` +
+    '--decision "Use this command to verify each completed Unit?" --options "Approve,Request Changes"`. ' +
+    "Show the returned canonical command and the question with its choices, then end the turn and wait for the person's reply. " +
+    "If that question is already pending, keep it: do not register it again after the reply. " +
+    `Record the choice they made with \`${logInvocation} answer ${identity} --details '<their choice>'\`. ` +
+    "Both commands find the session they run in. Only an Approve receipt authorizes " +
+    `\`${stateInvocation} set-construction-verification-command --command-file verification-command.txt\`.`;
+}
 
 export const CONSTRUCTION_POLICY_CHECKPOINT = "Construction Policy";
 

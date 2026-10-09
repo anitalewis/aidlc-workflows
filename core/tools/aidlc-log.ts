@@ -40,7 +40,7 @@ import {
   unknownRuntimeSessionWarning,
   validSessionId,
   VERIFICATION_COMMAND_CHECKPOINT,
-  VERIFICATION_COMMAND_RECOVERY,
+  verificationCommandRecovery,
   validConstructionPolicyChange,
   CONSTRUCTION_POLICY_CHECKPOINT,
   CONSTRUCTION_POLICY_RECOVERY,
@@ -485,7 +485,7 @@ function personSpokeInThisWork(pd: string): boolean {
 
 function verificationCommandFromFlags(pd: string, flags: Record<string, string>) {
   if ((flags.command !== undefined) === (flags["command-file"] !== undefined)) {
-    error("Verification command requires exactly one of --command or --command-file. " + VERIFICATION_COMMAND_RECOVERY);
+    error("Verification command requires exactly one of --command or --command-file. " + verificationCommandRecovery(flags.stage));
   }
   return flags["command-file"] !== undefined
     ? readVerificationCommandFile(pd, flags["command-file"])
@@ -1191,7 +1191,7 @@ function handleDecision(args: string[]): void {
     fields.Session = verificationCommandSession(pd, flags);
     const options = (flags.options ?? "").split(",").map((option) => option.trim().toLowerCase());
     if (options.length !== 2 || options[0] !== "approve" || options[1] !== "request changes") {
-      error('Verification command decision requires --options "Approve,Request Changes". ' + VERIFICATION_COMMAND_RECOVERY);
+      error('Verification command decision requires --options "Approve,Request Changes". ' + verificationCommandRecovery(flags.stage));
     }
   }
   const policyFields = flags.checkpoint === "construction-policy" ? constructionPolicyFields(pd, flags) : null;
@@ -2146,7 +2146,7 @@ function handleAnswer(args: string[]): void {
 
     if (verificationCommand) {
       if (!pendingVerificationDecision(pd, flags.stage, verificationCommand.sha256, fields.Session)) {
-        error("No matching pending DECISION_RECORDED with the same Command SHA-256 and Session exists in the current workflow. " + VERIFICATION_COMMAND_RECOVERY);
+        error("No matching pending DECISION_RECORDED with the same Command SHA-256 and Session exists in the current workflow. " + verificationCommandRecovery(flags.stage));
       }
       // Neither presence bypass nor autonomy supplies the person's recorded reply.
       requireProtectedResponse(pd, fields.Session, {

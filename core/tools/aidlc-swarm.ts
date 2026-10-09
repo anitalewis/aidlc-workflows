@@ -147,7 +147,7 @@ import {
   UNBINDABLE_FINGERPRINT,
   validateUnitName,
   verificationCommandDetails,
-  VERIFICATION_COMMAND_RECOVERY,
+  verificationCommandRecovery,
   worktreeAuditFilePath,
   worktreeRuntimeGraphPath,
   workspaceSourceEmbeddedGitPaths,
@@ -309,17 +309,17 @@ function swarmCheckCommand(projectDir: string, supplied: string | undefined, act
   const state = readStateFile(projectDir);
   const authorization = authorizedVerificationCommand(projectDir, state);
   if (!authorization) {
-    fail(`${action} requires an authorized Construction Verification Command. ${VERIFICATION_COMMAND_RECOVERY}`);
+    fail(`${action} requires an authorized Construction Verification Command. ${verificationCommandRecovery()}`);
   }
   if (supplied !== undefined) {
     let digest: string;
     try {
       digest = verificationCommandDetails(supplied).sha256;
     } catch (error) {
-      fail(`${error instanceof Error ? error.message : String(error)} ${VERIFICATION_COMMAND_RECOVERY}`);
+      fail(`${error instanceof Error ? error.message : String(error)} ${verificationCommandRecovery()}`);
     }
     if (digest !== authorization.sha256) {
-      fail(`--check-cmd does not match the authorized Construction Verification Command. Omit --check-cmd to use it, or authorize the replacement with set-construction-verification-command. ${VERIFICATION_COMMAND_RECOVERY}`);
+      fail(`--check-cmd does not match the authorized Construction Verification Command. Omit --check-cmd to use it, or authorize the replacement with set-construction-verification-command. ${verificationCommandRecovery()}`);
     }
   }
   return authorization;
